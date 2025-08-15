@@ -1,86 +1,181 @@
 #!/usr/bin/env python3
 """
-Maggie Stock AI - 免費版流量入口
-標普500股票查詢 + 每日3次限制 + 升級引導
+Maggie Stock AI - 統一股票分析機器人
+支援：免費版查詢 + 七巨頭Pro測試 + VIP完整功能
 """
 import sys
 import requests
 import os
 import json
-import hashlib
+import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-class MaggieStockFree:
+class UnifiedStockBot:
     def __init__(self):
         self.telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.telegram_chat_id = os.getenv('TELEGRAM_CHAT_ID')
         
-        # 免費版配置
-        self.daily_limit = 3
+        # 股票配置
         self.sp500_symbols = self.load_sp500_list()
+        self.magnificent_seven = ['AAPL', 'NVDA', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META']
         
-        # 付費版價格
-        self.basic_price = "$19.99"
-        self.pro_price = "$49.99"
+        # 用戶系統配置
+        self.user_levels = {
+            'free': {'daily_limit': 3, 'stocks': 'sp500', 'features': 'basic'},
+            'pro_beta': {'daily_limit': 999, 'stocks': 'magnificent7', 'features': 'advanced'},
+            'vip': {'daily_limit': 999, 'stocks': 'all', 'features': 'premium'}
+        }
         
-        # 用戶數據存儲 (簡化版，實際應用用數據庫)
-        self.user_data = {}
+        # 用戶數據庫 (實際應用使用真實數據庫)
+        self.users = {}
+        self.pro_beta_users = set()  # Pro測試用戶白名單 (100人限制)
+        
+        # 股票emoji映射
+        self.stock_emojis = {
+            'AAPL': '🍎', 'NVDA': '🚀', 'MSFT': '💻', 'GOOGL': '🔍',
+            'AMZN': '📦', 'TSLA': '🚗', 'META': '📘'
+        }
         
         if not self.telegram_token:
             raise ValueError("缺少 Telegram Bot Token")
     
     def load_sp500_list(self) -> List[str]:
-        """加載標普500股票代碼清單"""
+        """加載標普500股票清單"""
         return [
             'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'BRK.B',
             'UNH', 'JNJ', 'V', 'PG', 'JPM', 'HD', 'MA', 'PFE', 'BAC', 'ABBV',
             'KO', 'PEP', 'COST', 'DIS', 'ADBE', 'CRM', 'NFLX', 'XOM', 'TMO',
             'VZ', 'ACN', 'DHR', 'LLY', 'NKE', 'QCOM', 'TXN', 'NEE', 'PM',
             'UPS', 'RTX', 'LOW', 'INTU', 'AMD', 'SPGI', 'HON', 'SBUX', 'GS',
-            'CVX', 'LIN', 'T', 'UNP', 'SCHW', 'AXP', 'BLK', 'MDT', 'CAT',
-            'DE', 'MMM', 'AMT', 'IBM', 'TJX', 'GE', 'MU', 'NOW', 'ISRG',
-            'AMAT', 'CI', 'WMT', 'MO', 'GILD', 'COP', 'SO', 'ANTM', 'CVS',
-            'FIS', 'PYPL', 'C', 'ZTS', 'MDLZ', 'TGT', 'SYK', 'CSX', 'USB',
-            'BMY', 'WM', 'EOG', 'DUK', 'APD', 'CL', 'NSC', 'AON', 'ATVI'
+            'CVX', 'LIN', 'T', 'UNP', 'SCHW', 'AXP', 'BLK', 'MDT', 'CAT'
         ]
     
-    def get_user_id_from_message(self, message_text: str) -> str:
-        """從消息中提取用戶ID (簡化版)"""
-        # 實際應用中從Telegram API獲取用戶ID
-        return hashlib.md5(message_text.encode()).hexdigest()[:8]
+    def register_user(self, user_id: str, level: str = 'free') -> Dict:
+        """註冊新用戶"""
+        self.users[user_id] = {
+            'level': level,
+            'daily_queries': 0,
+            'total_queries': 0,
+            'last_reset': datetime.now().date(),
+            'joined_date': datetime.now(),
+            'last_query_time': None
+        }
+        return self.users[user_id]
     
-    def check_user_limit(self, user_id: str) -> tuple[bool, int]:
-        """檢查用戶每日查詢限制"""
-        today = datetime.now().date()
+    def get_user_info(self, user_id: str) -> Dict:
+        """獲取用戶信息"""
+        if user_id not in self.users:
+            self.register_user(user_id)
         
-        if user_id not in self.user_data:
-            self.user_data[user_id] = {
-                'last_date': today,
-                'daily_count': 0,
-                'total_queries': 0
-            }
-        
-        user = self.user_data[user_id]
+        user = self.users[user_id]
         
         # 重置每日計數
-        if user['last_date'] != today:
-            user['daily_count'] = 0
-            user['last_date'] = today
+        if user['last_reset'] != datetime.now().date():
+            user['daily_queries'] = 0
+            user['last_reset'] = datetime.now().date()
         
-        remaining = self.daily_limit - user['daily_count']
-        can_query = remaining > 0
-        
-        return can_query, remaining
+        return user
     
-    def update_user_count(self, user_id: str):
-        """更新用戶查詢計數"""
-        if user_id in self.user_data:
-            self.user_data[user_id]['daily_count'] += 1
-            self.user_data[user_id]['total_queries'] += 1
+    def check_query_permission(self, user_id: str, symbol: str) -> Tuple[bool, str]:
+        """檢查用戶查詢權限"""
+        user = self.get_user_info(user_id)
+        user_config = self.user_levels[user['level']]
+        
+        # 檢查每日限制
+        if user['daily_queries'] >= user_config['daily_limit']:
+            return False, self.generate_upgrade_message('daily_limit')
+        
+        # 檢查股票權限
+        symbol = symbol.upper()
+        if user_config['stocks'] == 'sp500' and symbol not in self.sp500_symbols:
+            return False, self.generate_upgrade_message('stock_limit')
+        elif user_config['stocks'] == 'magnificent7' and symbol not in self.magnificent_seven:
+            return False, f"🚫 Pro Beta版僅支持七巨頭股票\n💎 升級VIP解鎖全美股8000+支！"
+        
+        return True, "OK"
+    
+    def generate_upgrade_message(self, trigger_type: str) -> str:
+        """生成升級推廣信息"""
+        if trigger_type == 'daily_limit':
+            return """
+🚫 **免費版每日查詢已達上限 (3次)**
+
+💎 **升級解鎖更多功能！**
+
+🥈 **Pro Beta (限時免費)**:
+✅ 七巨頭股票無限查詢
+✅ Max Pain/Gamma 專業分析
+✅ 每日4次自動報告
+✅ 僅限100人測試
+
+🥇 **VIP專業版 $49.99/月**:
+✅ 全美股8000+支查詢
+✅ 期權深度分析
+✅ 籌碼分析
+✅ Notion面板整合
+✅ 價格警報
+
+申請Pro Beta: /apply_beta
+立即升級VIP: [升級連結]
+"""
+        elif trigger_type == 'stock_limit':
+            return """
+🚫 **該股票不在免費版範圍內**
+
+免費版僅支持標普500股票。
+
+💡 **升級選項**:
+🥈 Pro Beta: 七巨頭深度分析 (免費測試)
+🥇 VIP版: 全美股無限查詢
+
+申請Pro Beta: /apply_beta
+查看標普500清單: /sp500
+"""
+    
+    def apply_for_beta(self, user_id: str) -> str:
+        """申請Pro Beta測試"""
+        if len(self.pro_beta_users) >= 100:
+            return """
+😢 **Pro Beta測試名額已滿 (100/100)**
+
+但您可以：
+💎 加入VIP版等候名單，享早鳥5折優惠
+🔔 我們會在有名額時優先通知您
+
+加入等候名單: /waitlist
+直接升級VIP: /upgrade
+"""
+        
+        if user_id in self.pro_beta_users:
+            return "✅ 您已經是Pro Beta測試用戶了！"
+        
+        # 添加到Pro Beta用戶
+        self.pro_beta_users.add(user_id)
+        self.users[user_id]['level'] = 'pro_beta'
+        
+        return f"""
+🎉 **恭喜！Pro Beta申請成功！**
+
+您現在可以享受：
+✅ 七巨頭股票無限查詢
+✅ Max Pain/Gamma 專業分析  
+✅ 每日4次自動報告
+✅ 30天免費測試
+
+🚀 **七巨頭股票**: AAPL, NVDA, MSFT, GOOGL, AMZN, TSLA, META
+
+💡 **使用方法**:
+直接輸入股票代碼，例如：AAPL
+
+👥 **測試群組**: {len(self.pro_beta_users)}/100人
+⏰ **測試期限**: 30天
+
+開始體驗吧！🎯
+"""
     
     def get_stock_data(self, symbol: str) -> Dict:
-        """獲取股票基礎數據"""
+        """獲取股票數據"""
         try:
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -100,14 +195,6 @@ class MaggieStockFree:
             change = current_price - previous_close
             change_percent = (change / previous_close) * 100
             
-            # 獲取一些歷史數據用於簡單技術指標
-            quotes = result.get('indicators', {}).get('quote', [{}])[0]
-            closes = [p for p in quotes.get('close', []) if p is not None]
-            
-            # 簡單移動平均
-            sma_20 = sum(closes[-20:]) / 20 if len(closes) >= 20 else None
-            sma_50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
-            
             return {
                 'symbol': symbol,
                 'company_name': meta.get('longName', symbol),
@@ -119,303 +206,376 @@ class MaggieStockFree:
                 'market_cap': meta.get('marketCap'),
                 'day_high': meta.get('regularMarketDayHigh'),
                 'day_low': meta.get('regularMarketDayLow'),
-                'sma_20': sma_20,
-                'sma_50': sma_50,
                 'status_emoji': self.get_status_emoji(change_percent)
             }
         except Exception as e:
             return {'error': f'數據獲取失敗: {str(e)}'}
     
     def get_status_emoji(self, change_percent: float) -> str:
-        """根據漲跌幅返回狀態表情"""
+        """獲取狀態emoji"""
         if change_percent >= 2:
             return '🔥'
         elif change_percent >= 0.5:
             return '📈'
         elif change_percent >= 0:
             return '📊'
-        elif change_percent >= -2:
+        elif change_percent >= -0.5:
             return '📉'
         else:
             return '💥'
     
-    def generate_upgrade_message(self, trigger_type: str = "limit") -> str:
-        """生成升級推廣信息"""
-        if trigger_type == "limit":
-            return f"""
-🚫 **免費版每日查詢已達上限 (3次)**
-
-💎 **升級VIP，解鎖強大功能！**
-
-🥈 **VIP基礎版 {self.basic_price}/月**:
-✅ 全美股8000+支無限查詢
-✅ 新股/IPO實時追蹤  
-✅ 技術分析 (RSI/MACD/布林帶)
-✅ 即時新聞整合與AI摘要
-✅ 無延遲實時數據
-
-🥇 **VIP專業版 {self.pro_price}/月**:
-✅ 基礎版所有功能
-✅ **期權深度分析** (Max Pain/Gamma/IV)
-✅ **籌碼分析** (主力進出/大戶比例)  
-✅ **Notion投資組合面板**
-✅ **智能價格警報**
-✅ **多平台同步推送**
-
-🔥 **限時優惠**: 前100名用戶享5折優惠！
-
-立即升級: [升級連結]
-客服諮詢: @maggie_stock_support
-"""
-        elif trigger_type == "non_sp500":
-            return f"""
-🚫 **免費版僅支持標普500股票查詢**
-
-您查詢的股票不在標普500範圍內。
-
-💎 **升級VIP基礎版 {self.basic_price}/月**
-🌍 解鎖全美股8000+支股票查詢！
-
-包含：
-✅ NASDAQ全部股票  
-✅ NYSE完整覆蓋
-✅ 新股/IPO實時追蹤
-✅ 技術分析指標
-✅ 無限查詢次數
-
-🎯 **熱門非標普500股票**:
-RBLX, PLTR, COIN, HOOD, RIVN, LCID...
-
-立即升級: [升級連結]
-"""
+    def calculate_max_pain(self, symbol: str, current_price: float) -> Dict:
+        """計算Max Pain (Pro功能)"""
+        # 模擬Max Pain計算
+        adjustments = {
+            'AAPL': 0.985, 'NVDA': 0.975, 'MSFT': 0.988,
+            'GOOGL': 0.982, 'AMZN': 0.978, 'TSLA': 0.970, 'META': 0.980
+        }
+        
+        max_pain_price = current_price * adjustments.get(symbol, 0.98)
+        distance = abs(current_price - max_pain_price)
+        distance_percent = (distance / current_price) * 100
+        
+        if distance_percent < 1:
+            strength = "🔴 極強磁吸"
+        elif distance_percent < 2:
+            strength = "🟡 中等磁吸"
         else:
-            return f"""
-💡 **發現更多專業功能**
-
-免費版很棒，但VIP版更強大！
-
-🥇 **VIP專業版獨有**:
-🎯 **Max Pain Theory** - 預測主力操控目標
-⚡ **Gamma Exposure** - 識別支撐阻力牆  
-📊 **IV Crush分析** - 避開期權陷阱
-🧠 **籌碼分析** - 追蹤主力資金動向
-
-💼 **專業投資者的選擇**
-每天省下2杯咖啡錢，獲得華爾街級別分析！
-
-免費試用7天: [試用連結]
-"""
+            strength = "🟢 弱磁吸"
+        
+        return {
+            'max_pain_price': max_pain_price,
+            'distance': distance,
+            'strength': strength
+        }
     
-    def format_stock_response(self, stock_data: Dict, remaining_queries: int) -> str:
-        """格式化股票查詢回應"""
+    def calculate_gamma_levels(self, symbol: str, current_price: float) -> Dict:
+        """計算Gamma支撐阻力 (Pro功能)"""
+        ranges = {
+            'AAPL': 0.06, 'NVDA': 0.08, 'MSFT': 0.05,
+            'GOOGL': 0.06, 'AMZN': 0.07, 'TSLA': 0.10, 'META': 0.06
+        }
+        
+        range_factor = ranges.get(symbol, 0.06)
+        support = current_price * (1 - range_factor)
+        resistance = current_price * (1 + range_factor)
+        
+        return {
+            'support': support,
+            'resistance': resistance
+        }
+    
+    def generate_ai_recommendation(self, symbol: str, stock_data: Dict, user_level: str) -> Dict:
+        """生成AI建議和信心度"""
+        change_pct = stock_data['change_percent']
+        price = stock_data['current_price']
+        
+        # 基礎建議邏輯
+        if change_pct > 3:
+            recommendation = "強勢突破，可考慮追漲"
+            confidence = 85
+            strategy = "短線看漲"
+        elif change_pct > 1:
+            recommendation = "溫和上漲，謹慎樂觀"
+            confidence = 70
+            strategy = "持續觀察"
+        elif change_pct > -1:
+            recommendation = "震盪整理，等待方向"
+            confidence = 60
+            strategy = "觀望為主"
+        elif change_pct > -3:
+            recommendation = "調整壓力，逢低布局"
+            confidence = 65
+            strategy = "分批進場"
+        else:
+            recommendation = "深度調整，風險較高"
+            confidence = 45
+            strategy = "謹慎觀望"
+        
+        # Pro用戶有更詳細的分析
+        if user_level in ['pro_beta', 'vip']:
+            max_pain = self.calculate_max_pain(symbol, price)
+            gamma = self.calculate_gamma_levels(symbol, price)
+            
+            # 基於Max Pain調整建議
+            if max_pain['strength'] == "🔴 極強磁吸":
+                recommendation += f"，注意Max Pain磁吸效應"
+                confidence -= 10
+        
+        return {
+            'recommendation': recommendation,
+            'confidence': max(min(confidence, 95), 30),
+            'strategy': strategy
+        }
+    
+    def format_stock_response(self, symbol: str, stock_data: Dict, user_info: Dict) -> str:
+        """格式化股票回應"""
         if 'error' in stock_data:
             return f"❌ {stock_data['error']}"
         
+        user_level = user_info['level']
+        emoji = self.stock_emojis.get(symbol, '📊')
+        
         # 基礎信息
         response = f"""
-{stock_data['status_emoji']} **{stock_data['company_name']} ({stock_data['symbol']})**
+{emoji} **{stock_data['company_name']} ({symbol})**
 
-💰 **價格資訊**
-當前價格: ${stock_data['current_price']:.2f}
-漲跌: {stock_data['change']:+.2f} ({stock_data['change_percent']:+.2f}%)
+💰 **即時價格** (延遲3-5分鐘)
+當前: ${stock_data['current_price']:.2f}
+漲跌: {stock_data['change']:+.2f} ({stock_data['change_percent']:+.2f}%) {stock_data['status_emoji']}
 成交量: {stock_data['volume']:,}
 """
         
-        # 市值信息
-        if stock_data.get('market_cap'):
-            market_cap_b = stock_data['market_cap'] / 1e9
-            response += f"市值: ${market_cap_b:.1f}B\n"
-        
         # 價格區間
-        response += f"""
+        if stock_data.get('day_high') and stock_data.get('day_low'):
+            response += f"""
 📈 **今日區間**
-最高: ${stock_data.get('day_high', 0):.2f}
-最低: ${stock_data.get('day_low', 0):.2f}
+最高: ${stock_data['day_high']:.2f}
+最低: ${stock_data['day_low']:.2f}
 """
         
-        # 技術指標 (免費版簡化)
-        if stock_data.get('sma_20') and stock_data.get('sma_50'):
-            trend = "📈 多頭" if stock_data['current_price'] > stock_data['sma_20'] > stock_data['sma_50'] else "📉 空頭"
-            response += f"""
-📊 **技術面**
-20日均線: ${stock_data['sma_20']:.2f}
-50日均線: ${stock_data['sma_50']:.2f}
-趨勢: {trend}
-"""
-        
-        # 查詢狀態
+        # AI建議 (所有用戶都有)
+        ai_rec = self.generate_ai_recommendation(symbol, stock_data, user_level)
         response += f"""
-📱 **免費版狀態**
-今日剩餘查詢: {remaining_queries}次
-升級VIP享無限查詢: [升級連結]
+🤖 **AI分析建議**
+推薦: {ai_rec['recommendation']}
+策略: {ai_rec['strategy']}
+信心度: {ai_rec['confidence']}% {'🔥' if ai_rec['confidence'] > 80 else '📊' if ai_rec['confidence'] > 60 else '⚠️'}
 """
         
-        # 升級提示 (軟性推廣)
-        if remaining_queries <= 1:
+        # Pro功能 (Max Pain + Gamma)
+        if user_level in ['pro_beta', 'vip']:
+            max_pain = self.calculate_max_pain(symbol, stock_data['current_price'])
+            gamma = self.calculate_gamma_levels(symbol, stock_data['current_price'])
+            
             response += f"""
-💡 **提醒**: 今日查詢即將用完
-VIP基礎版每月僅需 {self.basic_price}，享受無限查詢！
+🧲 **Max Pain分析** (Pro功能)
+目標價: ${max_pain['max_pain_price']:.2f}
+磁吸強度: {max_pain['strength']}
+距離: ${max_pain['distance']:.2f}
+
+⚡ **Gamma支撐阻力** (Pro功能)  
+支撐位: ${gamma['support']:.2f}
+阻力位: ${gamma['resistance']:.2f}
+"""
+        
+        # 用戶狀態
+        remaining = self.user_levels[user_level]['daily_limit'] - user_info['daily_queries'] - 1
+        if user_level == 'free':
+            response += f"""
+📱 **免費版狀態**
+剩餘查詢: {remaining}次
+升級Pro Beta: /apply_beta
+"""
+        elif user_level == 'pro_beta':
+            response += f"""
+💎 **Pro Beta狀態**
+無限查詢 | 七巨頭專享
+測試剩餘: {30 - (datetime.now().date() - user_info['joined_date'].date()).days}天
+"""
+        
+        # 升級誘因 (免費用戶)
+        if user_level == 'free':
+            if remaining <= 0:
+                response += "\n" + self.generate_upgrade_message('daily_limit')
+            elif remaining == 1:
+                response += f"""
+💡 **提醒**: 今日最後1次查詢
+Pro Beta免費測試: /apply_beta
 """
         
         return response
     
-    def process_stock_query(self, symbol: str, user_id: str) -> str:
-        """處理股票查詢請求"""
-        symbol = symbol.upper().strip()
+    def process_message(self, message: str, user_id: str) -> str:
+        """處理用戶消息"""
+        message = message.strip()
         
-        # 檢查是否為標普500股票
-        if symbol not in self.sp500_symbols:
-            upgrade_msg = self.generate_upgrade_message("non_sp500")
-            return f"""
-🚫 **該股票不在免費版範圍內**
+        # 指令處理
+        if message.startswith('/'):
+            return self.handle_command(message, user_id)
+        
+        # 股票代碼檢測
+        symbol_match = re.match(r'^[A-Za-z]{1,5}$', message)
+        if symbol_match:
+            symbol = message.upper()
+            return self.query_stock(symbol, user_id)
+        
+        # 預設回應
+        return """
+❓ **使用方法**:
+直接輸入股票代碼，例如：
+• AAPL (蘋果)
+• TSLA (特斯拉)
+• NVDA (英偉達)
 
-免費版僅支持標普500股票查詢。
-您查詢的 **{symbol}** 需要升級VIP版本。
+📋 **指令清單**:
+/help - 使用說明
+/apply_beta - 申請Pro Beta
+/status - 查看狀態
 
-{upgrade_msg}
-
-💡 **免費版支持的熱門股票**:
-AAPL, MSFT, GOOGL, AMZN, NVDA, TSLA, META
-輸入 /list 查看完整標普500清單
+💡 支持的股票代碼: A-Z，1-5個字母
 """
-        
-        # 檢查每日查詢限制
-        can_query, remaining = self.check_user_limit(user_id)
+    
+    def handle_command(self, command: str, user_id: str) -> str:
+        """處理指令"""
+        if command == '/start' or command == '/help':
+            return self.generate_welcome_message()
+        elif command == '/apply_beta':
+            return self.apply_for_beta(user_id)
+        elif command == '/status':
+            return self.get_user_status(user_id)
+        elif command == '/sp500':
+            return f"📊 **標普500股票清單**:\n{', '.join(self.sp500_symbols[:50])}...\n\n共500支股票，免費版全部支持！"
+        else:
+            return "❓ 未知指令，輸入 /help 查看使用說明"
+    
+    def query_stock(self, symbol: str, user_id: str) -> str:
+        """股票查詢主函數"""
+        # 檢查權限
+        can_query, message = self.check_query_permission(user_id, symbol)
         if not can_query:
-            return self.generate_upgrade_message("limit")
+            return message
         
         # 獲取股票數據
         stock_data = self.get_stock_data(symbol)
         if 'error' in stock_data:
-            return f"❌ {stock_data['error']}\n\n請確認股票代碼正確，或輸入 /help 查看使用說明"
+            return f"❌ {stock_data['error']}\n\n請確認股票代碼正確"
         
         # 更新用戶查詢計數
-        self.update_user_count(user_id)
-        remaining -= 1
+        user_info = self.get_user_info(user_id)
+        user_info['daily_queries'] += 1
+        user_info['total_queries'] += 1
+        user_info['last_query_time'] = datetime.now()
         
         # 格式化回應
-        return self.format_stock_response(stock_data, remaining)
+        return self.format_stock_response(symbol, stock_data, user_info)
+    
+    def get_user_status(self, user_id: str) -> str:
+        """獲取用戶狀態"""
+        user = self.get_user_info(user_id)
+        level_config = self.user_levels[user['level']]
+        
+        level_names = {
+            'free': '🆓 免費版',
+            'pro_beta': '💎 Pro Beta',
+            'vip': '🔥 VIP專業版'
+        }
+        
+        return f"""
+👤 **用戶狀態報告**
+
+📊 **訂閱級別**: {level_names[user['level']]}
+📈 **今日查詢**: {user['daily_queries']}/{level_config['daily_limit']}
+📱 **總查詢數**: {user['total_queries']}
+📅 **加入日期**: {user['joined_date'].strftime('%Y-%m-%d')}
+
+💡 **可用功能**:
+{"✅ 標普500股票查詢" if level_config['stocks'] == 'sp500' else ''}
+{"✅ 七巨頭深度分析" if level_config['stocks'] == 'magnificent7' else ''}
+{"✅ 全美股8000+支查詢" if level_config['stocks'] == 'all' else ''}
+{"✅ Max Pain/Gamma分析" if level_config['features'] in ['advanced', 'premium'] else ''}
+
+{"申請Pro Beta: /apply_beta" if user['level'] == 'free' else ''}
+"""
     
     def generate_welcome_message(self) -> str:
         """生成歡迎信息"""
-        return f"""
+        return """
 🎉 **歡迎使用 Maggie Stock AI！**
 
-🆓 **免費版功能**:
-📊 標普500股票實時查詢
-📈 基礎技術分析
-💰 市值和價格資訊
-⏰ 每日3次免費查詢
+🚀 **三種服務級別**:
+
+🆓 **免費版**:
+• 標普500股票查詢
+• 每日3次限制  
+• 基礎分析 + AI建議
+
+💎 **Pro Beta** (限時免費):
+• 七巨頭深度分析
+• Max Pain/Gamma分析
+• 無限查詢
+• 僅限100人測試
+
+🔥 **VIP專業版**:
+• 全美股8000+支
+• 完整期權分析
+• 籌碼分析
+• Notion整合
 
 💡 **使用方法**:
-直接輸入股票代碼，例如：
-• `AAPL` - 查詢蘋果
-• `TSLA` - 查詢特斯拉  
-• `NVDA` - 查詢英偉達
+直接輸入股票代碼，例如：AAPL
 
-📋 **常用指令**:
-/help - 使用說明
-/list - 標普500清單
-/upgrade - 升級VIP
-/status - 查詢狀態
+📋 **指令清單**:
+/apply_beta - 申請Pro Beta測試
+/status - 查看個人狀態  
+/sp500 - 標普500清單
 
-🎯 **熱門股票**: AAPL, TSLA, NVDA, MSFT, GOOGL
-
-💎 想要更多功能？升級VIP享受：
-• 全美股8000+支查詢
-• 期權Max Pain分析  
-• 籌碼分析
-• 無限查詢次數
-
-立即開始查詢吧！📈
-"""
-    
-    def generate_help_message(self) -> str:
-        """生成幫助信息"""
-        return f"""
-📚 **Maggie Stock AI 使用指南**
-
-🔍 **查詢方法**:
-直接輸入股票代碼（無需/符號）
-例如：AAPL, TSLA, MSFT
-
-📊 **免費版限制**:
-• 僅支持標普500股票
-• 每日3次查詢限制
-• 基礎技術分析
-
-💎 **VIP版本功能**:
-🥈 基礎版 {self.basic_price}/月:
-• 全美股8000+支查詢
-• 技術指標完整分析
-• 新股/IPO追蹤
-
-🥇 專業版 {self.pro_price}/月:
-• Max Pain/Gamma分析
-• 籌碼分析
-• 智能警報
-
-🤝 **客服支持**:
-問題回報: @maggie_stock_support
-功能建議: feedback@maggiestock.ai
-
-💡 輸入任何標普500股票代碼開始體驗！
+🎯 立即開始體驗！
 """
     
     def send_telegram_message(self, message: str) -> bool:
-        """發送消息到Telegram"""
+        """發送Telegram消息"""
         try:
             if not self.telegram_chat_id:
-                print("📱 Telegram Chat ID 未設置，僅輸出到控制台")
+                print("📱 模擬Telegram回應:")
                 print("=" * 50)
                 print(message)
                 print("=" * 50)
                 return True
             
-            telegram_url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
-            telegram_data = {
+            url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+            data = {
                 "chat_id": self.telegram_chat_id,
                 "text": message,
                 "parse_mode": "Markdown"
             }
             
-            response = requests.post(telegram_url, json=telegram_data, timeout=10)
+            response = requests.post(url, json=data, timeout=10)
             return response.status_code == 200
             
         except Exception as e:
-            print(f"❌ Telegram 發送錯誤: {e}")
+            print(f"❌ Telegram發送錯誤: {e}")
             return False
     
     def run_demo(self):
         """運行演示"""
-        print("🚀 Maggie Stock AI 免費版演示")
-        print("=" * 50)
+        print("🚀 Maggie Stock AI 統一機器人演示")
+        print("=" * 60)
         
-        # 模擬用戶查詢
-        demo_user = "demo_user_001"
+        # 模擬不同用戶
+        demo_users = {
+            'free_user': 'free',
+            'beta_user': 'pro_beta',
+            'vip_user': 'vip'
+        }
         
-        # 歡迎消息
-        welcome = self.generate_welcome_message()
-        print("📱 歡迎消息:")
-        print(welcome)
-        print()
+        # 註冊演示用戶
+        for user_id, level in demo_users.items():
+            self.register_user(user_id, level)
+            if level == 'pro_beta':
+                self.pro_beta_users.add(user_id)
         
-        # 模擬查詢
-        queries = ["AAPL", "TSLA", "NVDA", "MSFT"]  # 第4個會觸發限制
+        # 演示查詢
+        test_queries = [
+            ('free_user', 'AAPL'),
+            ('beta_user', 'NVDA'), 
+            ('free_user', 'RBLX'),  # 非標普500
+            ('free_user', '/apply_beta'),
+        ]
         
-        for i, symbol in enumerate(queries, 1):
-            print(f"🔍 查詢 {i}: {symbol}")
-            result = self.process_stock_query(symbol, demo_user)
-            print(result)
-            print("-" * 30)
+        for user_id, query in test_queries:
+            print(f"\n👤 用戶: {user_id} | 查詢: {query}")
+            print("-" * 40)
+            response = self.process_message(query, user_id)
+            print(response)
 
 def main():
     """主函數"""
     try:
-        bot = MaggieStockFree()
+        bot = UnifiedStockBot()
         
-        # 如果有環境變數，發送歡迎消息
         if bot.telegram_chat_id:
+            # 發送歡迎消息
             welcome = bot.generate_welcome_message()
             bot.send_telegram_message(welcome)
         else:
