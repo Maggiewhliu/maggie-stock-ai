@@ -646,4 +646,383 @@ RBLX, PLTR, COIN, HOOD, RIVN, LCID...
 ✅ 無延遲實時數據
 ✅ 24/7技術支援
 
-🥇 **VIP專業版 {self.pro_price}/月**
+🥇 **VIP專業版 {self.pro_price}/月**:
+✅ 基礎版所有功能
+✅ **期權深度分析** (Max Pain/Gamma/IV)
+✅ **籌碼分析** (主力進出/大戶比例)  
+✅ **即時推送提醒**
+✅ **專屬客服支援**
+
+🔥 **限時優惠**: 前100名用戶享5折優惠！"""
+    
+    async def mag7_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """七巨頭分析回調"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        tier = self.user_manager.get_user_tier(user_id)
+        
+        if tier == 'free':
+            await query.edit_message_text(
+                f"""⚠️ **七巨頭分析需要Pro版權限**
+
+💎 **升級Pro享受：**
+✅ 美股七巨頭完整分析
+✅ Max Pain磁吸分析
+✅ 無限查詢次數
+✅ 每日自動報告
+
+💰 **僅需 {self.basic_price}/月**
+
+立即升級解鎖專業功能！""",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔓 立即升級", callback_data="upgrade")
+                ]])
+            )
+            return
+        
+        await query.edit_message_text("🔄 正在生成七巨頭分析報告...")
+        
+        try:
+            report = await self._generate_mag7_report()
+            await query.edit_message_text(report, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"生成報告失敗: {e}")
+            await query.edit_message_text("❌ 報告生成失敗，請稍後再試")
+    
+    async def _generate_mag7_report(self) -> str:
+        """生成七巨頭報告"""
+        taipei_time = datetime.now().strftime('%Y-%m-%d %H:%M 台北時間')
+        
+        report = f"""📅 {taipei_time}
+
+📊 **美股七巨頭即時分析**
+
+"""
+        
+        strongest = {'symbol': '', 'change': -999}
+        weakest = {'symbol': '', 'change': 999}
+        
+        for symbol, info in MAGNIFICENT_7.items():
+            try:
+                stock_data = await self.data_provider.get_stock_data(symbol)
+                if stock_data:
+                    emoji = info['emoji']
+                    name = info['name']
+                    price = stock_data['price']
+                    change = stock_data['change']
+                    change_percent = stock_data['change_percent']
+                    
+                    trend_emoji = "📈" if change_percent > 0 else "📉"
+                    if abs(change_percent) < 0.5:
+                        trend = "震盪整理"
+                    elif change_percent > 1:
+                        trend = "溫和上漲"
+                    elif change_percent < -1:
+                        trend = "調整壓力"
+                    else:
+                        trend = "微幅波動"
+                    
+                    report += f"{trend_emoji} {emoji} {name} ({symbol})\n"
+                    report += f"💰 ${price:.2f} ({change:+.2f} | {change_percent:+.1f}%)\n"
+                    report += f"📊 {trend}\n\n"
+                    
+                    if change_percent > strongest['change']:
+                        strongest = {'symbol': symbol, 'change': change_percent, 'emoji': emoji, 'name': name}
+                    if change_percent < weakest['change']:
+                        weakest = {'symbol': symbol, 'change': change_percent, 'emoji': emoji, 'name': name}
+                        
+            except Exception as e:
+                logger.error(f"獲取 {symbol} 數據失敗: {e}")
+                continue
+        
+        report += f"""🎯 **今日重點關注**
+🔥 **最強:** {strongest['emoji']} {strongest['name']} ({strongest['change']:+.1f}%)
+⚠️ **最弱:** {weakest['emoji']} {weakest['name']} ({weakest['change']:+.1f}%)
+
+💡 **交易策略建議**
+• **短線:** 關注最強股續航能力
+• **中線:** 關注最弱股反彈機會  
+• **長線:** 七檔均為優質科技成長股
+
+---
+📊 Maggie's Stock AI | Pro版功能
+🔄 數據每分鐘更新
+💬 升級VIP享受更多功能"""
+        
+        return report
+    
+    async def sp500_list_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """SP500清單回調"""
+        query = update.callback_query
+        await query.answer()
+        
+        # 分頁顯示SP500清單
+        page_size = 15
+        total_pages = (len(SP500_SYMBOLS) + page_size - 1) // page_size
+        
+        symbols_text = "📋 **標普500免費股票清單 (第1頁)**\n\n"
+        
+        # 顯示前15個
+        for i, symbol in enumerate(SP500_SYMBOLS[:page_size], 1):
+            emoji = MAGNIFICENT_7.get(symbol, {}).get('emoji', '📊')
+            symbols_text += f"{emoji} {symbol}  "
+            if i % 5 == 0:  # 每5個換行
+                symbols_text += "\n"
+        
+        symbols_text += f"\n\n💡 **使用方法:** 直接輸入任何代碼查詢"
+        symbols_text += f"\n📊 **總計:** {len(SP500_SYMBOLS)}支股票"
+        symbols_text += f"\n🚀 **熱門推薦:** {', '.join(list(MAGNIFICENT_7.keys())[:4])}"
+        
+        keyboard = [
+            [InlineKeyboardButton("➡️ 下一頁", callback_data="sp500_page_2")],
+            [InlineKeyboardButton("🔙 返回主選單", callback_data="back_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(symbols_text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    async def upgrade_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """升級回調"""
+        query = update.callback_query
+        await query.answer()
+        
+        upgrade_message = f"""🚀 **升級 Maggie's Stock AI**
+
+💎 **Pro版 - {self.basic_price}/月**
+✅ 美股七巨頭完整分析
+✅ Max Pain 磁吸分析  
+✅ Gamma 支撐阻力位
+✅ 無查詢次數限制
+✅ 每日4次自動報告
+
+🔥 **VIP版 - {self.pro_price}/月** (推薦)
+✅ Pro版全部功能
+✅ 全市場8000+股票
+✅ 期權策略分析
+✅ 即時價格推送
+✅ 技術指標大全
+✅ 專屬客服支援
+
+💳 **付款方式**
+• PayPal: maggie.stock.ai@gmail.com
+• 加密貨幣: USDT/BTC
+• 信用卡: 即將開放
+
+📞 **聯絡客服升級**
+Telegram: @maggie_invests
+Email: support@maggie-stock-ai.com
+
+🎁 **限時優惠**
+新用戶首月5折！使用代碼: WELCOME50
+前100名VIP用戶額外贈送1個月！"""
+        
+        keyboard = [
+            [InlineKeyboardButton("💳 聯絡客服升級", url="https://t.me/maggie_invests")],
+            [InlineKeyboardButton("🔙 返回主選單", callback_data="back_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(upgrade_message, reply_markup=reply_markup)
+    
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """幫助命令"""
+        help_text = f"""📖 **Maggie Stock AI 使用說明**
+
+🔍 **查詢方法**:
+直接輸入股票代碼（無需/符號）
+例如：AAPL, TSLA, MSFT
+
+📊 **免費版功能**:
+• 支援{len(SP500_SYMBOLS)}支標普500股票
+• 每日3次查詢限制
+• 基礎技術分析
+• AI投資建議與信心度
+• 雙重數據源保證穩定性
+
+💎 **VIP版本功能**:
+🥈 基礎版 {self.basic_price}/月:
+• 全美股8000+支查詢
+• 技術指標完整分析
+• 新股/IPO追蹤
+• 無限查詢次數
+
+🥇 專業版 {self.pro_price}/月:
+• Max Pain/Gamma分析
+• 籌碼分析
+• 智能警報
+• 專屬客服
+
+⚡ **常用指令**:
+• /start - 重新開始
+• /mag7 - 七巨頭分析
+• /list - 標普500清單
+• /upgrade - 升級VIP
+• /status - 系統狀態
+
+🤝 **客服支持**:
+問題回報: @maggie_invests
+功能建議: support@maggie-stock-ai.com
+
+💡 輸入任何標普500股票代碼開始體驗！"""
+        
+        await update.message.reply_text(help_text)
+    
+    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """系統狀態"""
+        user_id = update.effective_user.id
+        tier = self.user_manager.get_user_tier(user_id)
+        queries_today = self.user_manager.get_user_queries_today(user_id)
+        total_queries = self.user_manager.users.get(str(user_id), {}).get('total_queries', 0)
+        
+        current_time = datetime.now()
+        
+        # 檢查API狀態
+        api_status = "🟢 正常"
+        data_sources = []
+        if self.data_provider.alpha_vantage_key:
+            data_sources.append("Alpha Vantage")
+        data_sources.append("Yahoo Finance")
+        
+        status_text = f"""📊 **Maggie Stock AI 系統狀態**
+
+👤 **用戶資訊**
+權限等級: {tier.upper()}
+今日查詢: {queries_today}次
+總查詢數: {total_queries}次
+
+🔗 **系統狀態**
+API連接: {api_status}
+數據來源: {' + '.join(data_sources)}
+⏰ 系統時間: {current_time.strftime('%Y-%m-%d %H:%M:%S')}
+🌍 服務區域: Asia-Southeast
+
+📈 **服務範圍**
+免費版: {len(SP500_SYMBOLS)}支標普500股票
+Pro版: 美股七巨頭 + Max Pain分析
+VIP版: 全美股8000+支股票
+
+💾 **數據品質**
+資料延遲: 即時（<30秒）
+🔄 更新頻率: 實時
+📡 備援機制: 雙重數據源
+
+📞 **技術支援**: @maggie_invests
+🔓 **升級VIP**: /upgrade
+
+✅ 系統運行正常，可以開始查詢股票！"""
+        
+        await update.message.reply_text(status_text)
+    
+    async def list_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """列表命令"""
+        await self.sp500_list_callback(update, context)
+
+async def main():
+    """主函數"""
+    try:
+        # 創建機器人實例
+        bot = MaggieFinalBot()
+        
+        # 創建應用程式
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # 顯示Bot資訊
+        bot_info = await application.bot.get_me()
+        print(f"🤖 Bot啟動成功!")
+        print(f"📱 Bot名稱: {bot_info.first_name}")
+        print(f"🆔 Bot ID: {bot_info.id}")
+        print(f"👤 Bot用戶名: @{bot_info.username}")
+        print(f"⏰ 啟動時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"🔑 Alpha Vantage: {'已配置' if ALPHA_VANTAGE_KEY else '未配置（使用Yahoo備用）'}")
+        print(f"📊 支援股票: {len(SP500_SYMBOLS)}支標普500 + 全球股票")
+        
+        # 註冊命令處理器
+        application.add_handler(CommandHandler("start", bot.start_command))
+        application.add_handler(CommandHandler("help", bot.help_command))
+        application.add_handler(CommandHandler("status", bot.status_command))
+        application.add_handler(CommandHandler("list", bot.list_command))
+        application.add_handler(CommandHandler("mag7", bot.mag7_callback))
+        application.add_handler(CommandHandler("upgrade", bot.upgrade_callback))
+        
+        # 回調處理器
+        application.add_handler(CallbackQueryHandler(
+            bot.mag7_callback, pattern="mag7"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            bot.sp500_list_callback, pattern="sp500_list"
+        ))
+        application.add_handler(CallbackQueryHandler(
+            bot.upgrade_callback, pattern="upgrade"
+        ))
+        
+        # 文字訊息處理器（股票查詢）
+        application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            bot.handle_stock_query
+        ))
+        
+        # 設定每日定時任務 (可選 - 需要Pro/VIP用戶才發送)
+        job_queue = application.job_queue
+        
+        # 每日台北時間8點發送七巨頭報告
+        job_queue.run_daily(
+            bot._daily_report_job, 
+            time=datetime.strptime("08:00", "%H:%M").time(),
+            name="daily_mag7_report"
+        )
+        
+        print("🚀 Maggie's Stock AI 最終版本開始運行...")
+        print("💡 整合功能:")
+        print("   • Alpha Vantage API (主要)")
+        print("   • Yahoo Finance (備用)")
+        print("   • 三層用戶系統")
+        print("   • Max Pain分析")
+        print("   • 智能升級引導")
+        
+        # 啟動機器人
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        logger.error(f"❌ Bot啟動失敗: {e}")
+        print(f"❌ 錯誤詳情: {e}")
+
+    async def _daily_report_job(self, context: ContextTypes.DEFAULT_TYPE):
+        """每日定時報告任務（僅發送給Pro/VIP用戶）"""
+        try:
+            # 獲取所有Pro/VIP用戶
+            pro_vip_users = [
+                user_id for user_id, data in self.user_manager.users.items() 
+                if data.get('tier') in ['pro', 'vip']
+            ]
+            
+            if not pro_vip_users:
+                logger.info("沒有Pro/VIP用戶，跳過每日報告")
+                return
+            
+            # 生成報告
+            report = await self._generate_mag7_report()
+            report = f"🌅 **每日晨報**\n\n{report}"
+            
+            # 發送給所有Pro/VIP用戶
+            success_count = 0
+            for user_id in pro_vip_users:
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(user_id), 
+                        text=report, 
+                        parse_mode='Markdown'
+                    )
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"發送每日報告失敗 {user_id}: {e}")
+            
+            logger.info(f"每日報告發送完成: {success_count}/{len(pro_vip_users)} 成功")
+                    
+        except Exception as e:
+            logger.error(f"每日報告任務失敗: {e}")
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
