@@ -1,0 +1,15 @@
+name: batch
+on:
+  schedule: [ { cron: "*/30 13-21 * * 1-5" } ]   # 週一～週五，美股時段每30分鐘
+  workflow_dispatch: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: |
+          python -m src.cli maxpain AAPL
+          python -m src.cli gex TSLA
