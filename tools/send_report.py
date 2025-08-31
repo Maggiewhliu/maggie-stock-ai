@@ -4,8 +4,8 @@ import httpx
 from src.provider_yahoo import YahooProvider
 from src.service import maxpain_handler, gex_handler
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")   # 例如 123456789
+BOT_TOKEN = os.getenv("8320641094:AAG1JVdI6BaPLgoUIAYmI3QgymnDG6x3hZE")
+CHAT_ID = os.getenv("maggie_ai_stock_bot") 
 WATCHLIST = os.getenv("WATCHLIST", "AAPL,MSFT,TSLA,NVDA").split(",")
 BRAND_NAME = os.getenv("BRAND_NAME", "Maggie's Stock AI")
 
