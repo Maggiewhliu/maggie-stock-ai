@@ -1,7 +1,7 @@
 name: Maggie Stock AI - Unified System
 
 on:
-  # 七巨頭自動報告 - 每日4次
+  # 七巨頭自動報告 - 每日4次 (修復cron語法)
   schedule:
     # 06:00 台北時間 = 22:00 UTC (前一天)
     - cron: '0 22 * * *'
@@ -45,7 +45,7 @@ jobs:
     - name: 📦 Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests python-dateutil
+        pip install requests python-dateutil pytz
     
     - name: 🕐 Display current time
       run: |
@@ -83,8 +83,8 @@ jobs:
           echo "🧪 執行: 用戶演示模式"
         fi
         
-        echo "=" | tr = "="
-        python maggie_stock_ai.py
+        echo "=================================================="
+        python maggie-stock-ai.py
     
     - name: 📊 Log execution results
       run: |
@@ -112,10 +112,10 @@ jobs:
       run: |
         echo "🎯 Maggie Stock AI 系統運行成功！"
         echo "📊 功能狀態:"
-        echo "   ✅ 免費版股票查詢"
+        echo "   ✅ 免費版股票查詢系統"
         echo "   ✅ Pro Beta 七巨頭分析"  
-        echo "   ✅ 自動報告推送"
-        echo "   ✅ 用戶權限管控"
+        echo "   ✅ 自動報告推送功能"
+        echo "   ✅ 用戶權限管控系統"
         echo "🚀 系統已準備接收用戶查詢"
     
     - name: ❌ Failure notification
@@ -124,8 +124,8 @@ jobs:
         echo "⚠️ Maggie Stock AI 系統執行失敗"
         echo "🔧 請檢查以下項目:"
         echo "   • Telegram Bot Token 是否正確"
-        echo "   • Chat ID 是否有效"
+        echo "   • Chat ID 是否有效"  
         echo "   • 網路連接是否正常"
         echo "   • Yahoo Finance API 是否可用"
-        echo "   • Python 代碼是否有語法錯誤"
-        echo "📋 詳細錯誤請查看 Actions 日誌"
+        echo "   • Python 代碼語法是否正確"
+        echo "📋 詳細錯誤請查看上方 Actions 日誌"
