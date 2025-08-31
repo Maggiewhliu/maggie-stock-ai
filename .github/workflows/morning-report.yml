@@ -1,0 +1,20 @@
+name: morning-report
+on:
+  schedule:
+    - cron: "0 0 * * 1-5"   # UTC 00:00 -> 你可改時區；UTC+8 的早上 8 點 = 00:00 UTC
+  workflow_dispatch: {}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - name: Send morning report to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          WATCHLIST:          ${{ vars.WATCHLIST }}   # ex: AAPL,MSFT,TSLA,NVDA,QQQ,SPY
+          BRAND_NAME:         "Maggie's Stock AI"
+        run: python -m tools.send_report
