@@ -1,40 +1,27 @@
-import time
-from typing import List, Tuple, Optional
-from src.provider_yahoo import YahooProvider
-from src.cache import get_json, set_json, lock
-from src.analyzers import (
-    OptionRow, OptionGreeksRow, compute_max_pain, compute_gex,
-    compute_gamma_levels
-)
+# server.py — Webhook server for Telegram
+import os, asyncio
+from fastapi import FastAPI, Request
+from telegram.ext import ApplicationBuilder
+from src.bot import start_cmd, stock_cmd, maxpain_cmd, gex_cmd, ipo_cmd  # 直接重用你的 handlers
+from telegram.ext import CommandHandler
 
-def get_option_chain_cached(symbol: str, expiry: str, ttl=900) -> dict:
-    key=f'v1:options:{symbol}:{expiry}'
-    data=get_json(key)
-    if data and (time.time()-data.get('fetched_at',0))<ttl:
-        return data
-    with lock(key, ttl=30):
-        data=get_json(key)
-        if data and (time.time()-data.get('fetched_at',0))<ttl:
-            return data
-        raw=YahooProvider().get_options_chain(symbol, expiry)
-        payload={'fetched_at': time.time(), 'data': raw, 'source':'yahoo'}
-        set_json(key, payload, ttl=ttl)
-        return payload
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+app = FastAPI()
+tg_app = ApplicationBuilder().token(TOKEN).updater(None).build()
+tg_app.add_handler(CommandHandler("start", start_cmd))
+tg_app.add_handler(CommandHandler("stock", stock_cmd))
+tg_app.add_handler(CommandHandler("maxpain", maxpain_cmd))
+tg_app.add_handler(CommandHandler("gex", gex_cmd))
+tg_app.add_handler(CommandHandler("ipo", ipo_cmd))
 
-def maxpain_handler(symbol: str, expiry: str):
-    oc=get_option_chain_cached(symbol, expiry)
-    rows: List[OptionRow]=[]
-    for r in oc['data']['calls']: rows.append(OptionRow(r['strike'],'call',r.get('openInterest',0) or 0))
-    for r in oc['data']['puts']:  rows.append(OptionRow(r['strike'],'put', r.get('openInterest',0) or 0))
-    mp=compute_max_pain(rows, contract_multiplier=100)
-    return {'symbol': symbol.upper(), 'expiry': oc['data']['expiry'], 'max_pain': mp.max_pain, 'min_total_pain': mp.min_total_pain}
+@app.on_event("startup")
+async def startup():
+    await tg_app.initialize()
+    # 這裡不要 start_polling；我們用 webhook receiver
+    # setWebhook 交由部署完成後用 curl 打一次（或在此讀環境變數自動設定也可）
 
-def gex_handler(symbol: str, expiry: str, spot: float, r: float=0.045, q: float=0.0):
-    oc=get_option_chain_cached(symbol, expiry)
-    rows: List[OptionGreeksRow]=[]
-    for src, ttype in (('calls','call'),('puts','put')):
-        for rr in oc['data'][src]:
-            rows.append(OptionGreeksRow(rr['strike'], ttype, rr.get('openInterest',0) or 0, rr.get('impliedVolatility'), rr.get('T',0.0)))
-    gex = compute_gex(rows, spot=spot, r=r, q=q, contract_multiplier=100)
-    support, resistance = compute_gamma_levels(rows, spot=spot, r=r, q=q, contract_multiplier=100)
-    return gex, support, resistance
+@app.post("/webhook")
+async def telegram_webhook(req: Request):
+    data = await req.json()
+    await tg_app.update_queue.put(tg_app.bot._build_update(data))  # 交給 PTB 處理
+    return {"ok": True}
