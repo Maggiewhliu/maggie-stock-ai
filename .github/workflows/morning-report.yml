@@ -11,10 +11,11 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
       - run: pip install -r requirements.txt
-      - name: Send morning report to Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
-          WATCHLIST:          ${{ vars.WATCHLIST }}   # ex: AAPL,MSFT,TSLA,NVDA,QQQ,SPY
-          BRAND_NAME:         "Maggie's Stock AI"
-        run: python -m tools.send_report
+     - name: Send morning report to Telegram
+  env:
+    TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+    WATCHLIST:          ${{ vars.WATCHLIST }}   # ex: AAPL,MSFT,TSLA,NVDA,GOOG,META
+    BRAND_NAME:         "Maggie's Stock AI"
+    POLYGON_API_KEY:    ${{ secrets.POLYGON_API_KEY }}   # 有就加
+  run: python -m tools.send_report
