@@ -1,33 +1,17 @@
-# 🤖 Maggie Stock AI - 統一股票分析系統
+# Maggie's Stock AI (Slim B)
+- 純函數演算法（Max Pain / Gamma Exposure / BS & IV 反解）
+- yfinance 提供者（不需 API key）
+- Redis(可選) + 檔案快取；SWR + 單飛鎖
+- CLI / Telegram Bot / GitHub Actions
 
-## 🎯 功能特色
+## 快速開始
+```bash
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
-### 🆓 免費版
-- 標普500股票查詢
-- 每日3次限制
-- 基礎價量分析 + AI建議
+# 離線驗算法
+python -m src.cli maxpain --from-csv data/sample_options.csv
 
-### 💎 Pro Beta (限時免費)
-- 七巨頭深度分析
-- Max Pain/Gamma 專業分析
-- 無限查詢 (100人限定)
-
-### 🔥 VIP專業版
-- 全美股8000+支查詢
-- 完整期權分析
-- 籌碼分析 + Notion整合
-
-## 💡 使用方法
-
-直接在Telegram輸入股票代碼：
-- `AAPL` - 查詢蘋果
-- `TSLA` - 查詢特斯拉
-- `NVDA` - 查詢英偉達
-
-## 🤖 自動化功能
-
-每日4次七巨頭分析報告：
-- 06:00 盤前分析
-- 12:00 開盤報告
-- 18:00 收盤總結
-- 22:00 盤後夜報
+# 線上
+python -m src.cli maxpain TSLA
+python -m src.cli gex TSLA
