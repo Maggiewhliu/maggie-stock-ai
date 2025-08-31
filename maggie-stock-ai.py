@@ -37,6 +37,16 @@ class MaggieStockAI:
         if not self.telegram_token:
             raise ValueError("缺少 Telegram Bot Token")
     
+    def clean_markdown(self, text: str) -> str:
+        """清理 Markdown 特殊字符以避免 Telegram 解析錯誤"""
+        # 移除可能導致解析錯誤的字符
+        text = text.replace('*', '✱')  # 替換星號
+        text = text.replace('_', '－')  # 替換底線
+        text = text.replace('[', '〔')  # 替換方括號
+        text = text.replace(']', '〕')
+        text = text.replace('`', "'")   # 替換反引號
+        return text
+    
     def load_sp500_list(self) -> List[str]:
         """加載標普500股票清單"""
         return [
@@ -341,9 +351,12 @@ class MaggieStockAI:
                 return True
             
             url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+            # 清理 Markdown 特殊字符
+            cleaned_message = self.clean_markdown(message)
+            
             data = {
                 "chat_id": self.telegram_chat_id,
-                "text": message,
+                "text": cleaned_message,
                 "parse_mode": "Markdown",
                 "disable_web_page_preview": True
             }
