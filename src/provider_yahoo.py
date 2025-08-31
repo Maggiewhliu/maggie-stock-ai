@@ -76,22 +76,20 @@ class YahooProvider:
     # ---------- Expirations ----------
     def _list_expirations(self, symbol: str) -> List[str]:
         exps = yf.Ticker(symbol).options or []
-        # ensure ISO strings
         return [str(x) for x in exps]
 
     def nearest_expiry(self, symbol: str) -> str:
         """
         Pick the nearest *upcoming* expiry (>= now). If all are in the past,
         fallback to the absolute-closest one.
+        Always return YYYY-MM-DD.
         """
         exps = self._list_expirations(symbol)
         if not exps:
             raise ValueError(f"No expirations for {symbol}")
         now = _utc_ts(pd.Timestamp.utcnow())
 
-        # Split into upcoming and past; choose nearest upcoming first.
-        upcoming = []
-        past = []
+        upcoming, past = [], []
         for d in exps:
             ts = _utc_ts(d)
             (upcoming if ts >= now else past).append(ts)
@@ -99,10 +97,9 @@ class YahooProvider:
         if upcoming:
             target = min(upcoming, key=lambda ts: ts - now)
         else:
-            # all past: choose absolute-closest to now
             target = min(past, key=lambda ts: abs(ts - now))
 
-        return str(target.tz_convert(UTC).date())
+        return str(target.date())
 
     # ---------- Options chain ----------
     def get_options_chain(self, symbol: str, expiry: str) -> Dict[str, Any]:
@@ -119,7 +116,7 @@ class YahooProvider:
         if not exps:
             raise ValueError(f"No options for {symbol}")
 
-        # snap expiry to closest available (handle user-supplied dates)
+        # snap expiry to closest available
         if expiry not in exps:
             exp_target = _utc_ts(expiry)
             expiry = min(exps, key=lambda d: abs(_utc_ts(d) - exp_target))
@@ -128,7 +125,6 @@ class YahooProvider:
         calls = chain.calls.copy()
         puts = chain.puts.copy()
 
-        # normalize columns
         for df in (calls, puts):
             if "openInterest" not in df:
                 df["openInterest"] = 0
