@@ -1,3 +1,6 @@
+cd ~/maggie-stock-ai
+
+cat > requirements.txt <<'TXT'
 python-telegram-bot==20.3
 yfinance
 pandas
@@ -6,3 +9,4 @@ pydantic
 httpx
 fastapi
 uvicorn
+TXT
