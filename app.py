@@ -1,8 +1,7 @@
 import os
 import logging
-from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackContext
+import requests
+from flask import Flask, request, jsonify
 
 # 設置日誌
 logging.basicConfig(level=logging.INFO)
@@ -13,61 +12,99 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("請設置 TELEGRAM_BOT_TOKEN 環境變數")
 
+# Telegram API 基礎 URL
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TOKEN}"
+
 # 創建 Flask 應用
 app = Flask(__name__)
 
-# 創建 Bot 和 Dispatcher (舊版本語法)
-bot = Bot(TOKEN)
-dispatcher = Dispatcher(bot, None, workers=0)
+def send_message(chat_id, text):
+    """發送訊息到 Telegram"""
+    try:
+        url = f"{TELEGRAM_API_URL}/sendMessage"
+        data = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML"
+        }
+        response = requests.post(url, json=data, timeout=10)
+        return response.json()
+    except Exception as e:
+        logger.error(f"發送訊息失敗: {str(e)}")
+        return None
 
-# 指令處理函數 (舊版本語法)
-def start_command(update: Update, context: CallbackContext):
+def handle_start_command(chat_id):
     """處理 /start 指令"""
-    update.message.reply_text(
-        "👋 嗨！我是 Maggie's Stock AI\n\n"
-        "🔹 /stock TSLA - 查詢股票\n"
-        "🔹 /help - 顯示幫助\n\n"
-        "機器人運行正常！"
-    )
+    message = """👋 嗨！我是 Maggie's Stock AI
 
-def stock_command(update: Update, context: CallbackContext):
+🔹 /stock TSLA - 查詢股票
+🔹 /help - 顯示幫助
+
+機器人運行正常！"""
+    
+    send_message(chat_id, message)
+
+def handle_stock_command(chat_id, args):
     """處理 /stock 指令"""
-    args = context.args
     if not args:
-        update.message.reply_text("用法：/stock TSLA")
+        send_message(chat_id, "用法：/stock TSLA")
         return
     
     symbol = args[0].upper()
-    update.message.reply_text(
-        f"📊 {symbol} 分析中...\n\n"
-        "💰 價格：$250.00\n"
-        "📈 變動：+2.5%\n"
-        "🎯 狀態：測試中\n\n"
-        "（這是測試數據，功能開發中）"
-    )
+    message = f"""📊 {symbol} 分析報告
 
-def help_command(update: Update, context: CallbackContext):
+💰 價格：$250.00
+📈 變動：+2.5%
+🎯 狀態：測試中
+
+（這是測試數據，功能開發中）"""
+    
+    send_message(chat_id, message)
+
+def handle_help_command(chat_id):
     """處理 /help 指令"""
-    update.message.reply_text(
-        "📚 Maggie's Stock AI 指令：\n\n"
-        "🔹 /start - 開始使用\n"
-        "🔹 /stock TSLA - 股票查詢\n"
-        "🔹 /help - 顯示此幫助\n\n"
-        "更多功能開發中..."
-    )
+    message = """📚 Maggie's Stock AI 指令：
 
-def handle_message(update: Update, context: CallbackContext):
-    """處理一般訊息"""
-    update.message.reply_text(
-        f"收到訊息：{update.message.text}\n"
-        "請使用 /help 查看可用指令"
-    )
+🔹 /start - 開始使用
+🔹 /stock TSLA - 股票查詢
+🔹 /help - 顯示此幫助
 
-# 註冊處理器 (舊版本語法)
-dispatcher.add_handler(CommandHandler("start", start_command))
-dispatcher.add_handler(CommandHandler("stock", stock_command))
-dispatcher.add_handler(CommandHandler("help", help_command))
-dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+更多功能開發中..."""
+    
+    send_message(chat_id, message)
+
+def process_telegram_update(update_data):
+    """處理 Telegram 更新"""
+    try:
+        if "message" not in update_data:
+            return
+        
+        message = update_data["message"]
+        chat_id = message["chat"]["id"]
+        
+        if "text" not in message:
+            return
+        
+        text = message["text"]
+        
+        # 處理指令
+        if text.startswith("/start"):
+            handle_start_command(chat_id)
+        elif text.startswith("/stock"):
+            # 解析參數
+            parts = text.split()
+            args = parts[1:] if len(parts) > 1 else []
+            handle_stock_command(chat_id, args)
+        elif text.startswith("/help"):
+            handle_help_command(chat_id)
+        else:
+            # 處理一般訊息
+            send_message(chat_id, f"收到訊息：{text}\n請使用 /help 查看可用指令")
+        
+        logger.info(f"處理訊息成功: {text} from {chat_id}")
+        
+    except Exception as e:
+        logger.error(f"處理更新失敗: {str(e)}")
 
 # Flask 路由
 @app.route("/")
@@ -89,29 +126,49 @@ def set_webhook():
     """設置 webhook"""
     try:
         webhook_url = "https://maggie-stock-ai.onrender.com/webhook"
-        result = bot.set_webhook(url=webhook_url)
+        url = f"{TELEGRAM_API_URL}/setWebhook"
         
-        if result:
+        response = requests.post(url, json={"url": webhook_url}, timeout=10)
+        result = response.json()
+        
+        if result.get("ok"):
+            logger.info(f"Webhook 設置成功: {webhook_url}")
             return {"status": "success", "webhook": webhook_url}
         else:
-            return {"status": "failed"}, 500
+            logger.error(f"Webhook 設置失敗: {result}")
+            return {"status": "failed", "error": result}, 500
+            
     except Exception as e:
+        logger.error(f"設置 webhook 錯誤: {str(e)}")
         return {"status": "error", "message": str(e)}, 500
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """處理 webhook (舊版本同步處理)"""
+    """處理 webhook"""
     try:
         json_data = request.get_json(force=True)
-        update = Update.de_json(json_data, bot)
         
-        # 舊版本同步處理
-        dispatcher.process_update(update)
+        if not json_data:
+            return "No data", 400
+        
+        # 處理 Telegram 更新
+        process_telegram_update(json_data)
         
         return "OK"
+        
     except Exception as e:
         logger.error(f"Webhook 錯誤: {str(e)}")
         return "Error", 500
+
+@app.route("/bot-info")
+def bot_info():
+    """獲取機器人資訊"""
+    try:
+        url = f"{TELEGRAM_API_URL}/getMe"
+        response = requests.get(url, timeout=10)
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}, 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
