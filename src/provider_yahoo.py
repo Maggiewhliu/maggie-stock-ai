@@ -1,342 +1,517 @@
-# src/provider_yahoo.py
-import datetime as dt
-from typing import Dict, Any, List, Optional
-import pandas as pd
-import yfinance as yf
-import asyncio
+# yahoo_finance.py
+import requests
+import json
+import time
+from datetime import datetime, timedelta
 import logging
 
-UTC = "UTC"
 logger = logging.getLogger(__name__)
 
-def _utc_ts(obj) -> pd.Timestamp:
-    """Return timezone-aware UTC Timestamp."""
-    ts = pd.Timestamp(obj)
-    return ts.tz_localize(UTC) if ts.tzinfo is None else ts.tz_convert(UTC)
-
-def _year_fraction_365(now_utc: pd.Timestamp, expiry_utc: pd.Timestamp) -> float:
-    return max((expiry_utc - now_utc).total_seconds() / (365.0 * 24 * 3600), 0.0)
-
-class YahooProvider:
-    """Thin wrapper around yfinance with safe normalization."""
-
+class YahooFinanceProvider:
+    """完整的 Yahoo Finance 數據提供者"""
+    
     def __init__(self):
-        """初始化 Yahoo Finance 提供者"""
-        self.cache = {}  # 簡單的內存快取
-        self.cache_timeout = 300  # 5分鐘快取
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        })
+        self.base_url = "https://query1.finance.yahoo.com"
+        self.retry_count = 3
+        self.retry_delay = 1
     
-    # ---------- 新增：Bot所需的核心方法 ----------
-    async def get_stock_data(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """
-        獲取股票完整數據，用於 bot.py
-        返回格式化的股票數據字典
-        """
-        try:
-            # 使用 asyncio 運行同步函數
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, self._fetch_stock_data, symbol)
-            return result
-        except Exception as e:
-            logger.error(f"獲取 {symbol} 股票數據失敗: {str(e)}")
-            return None
+    def _make_request(self, url, params=None):
+        """發送HTTP請求，包含重試機制"""
+        for attempt in range(self.retry_count):
+            try:
+                response = self.session.get(url, params=params, timeout=15)
+                
+                if response.status_code == 200:
+                    return response.json()
+                elif response.status_code == 404:
+                    logger.warning(f"股票代碼不存在: {url}")
+                    return None
+                else:
+                    logger.warning(f"API 請求失敗，狀態碼: {response.status_code}")
+                    
+            except requests.exceptions.Timeout:
+                logger.warning(f"請求超時，嘗試 {attempt + 1}/{self.retry_count}")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"請求錯誤: {str(e)}")
+            except json.JSONDecodeError:
+                logger.error(f"JSON 解析錯誤")
+            
+            if attempt < self.retry_count - 1:
+                time.sleep(self.retry_delay * (attempt + 1))
+        
+        return None
     
-    def _fetch_stock_data(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """同步獲取股票數據的實際實現"""
+    def get_basic_info(self, symbol):
+        """獲取股票基本資訊"""
         try:
-            ticker = yf.Ticker(symbol)
-            
-            # 獲取基本報價資訊
-            quote_data = self.get_quote(symbol)
-            if not quote_data or quote_data.get('price') is None:
-                logger.warning(f"無法獲取 {symbol} 的價格數據")
-                return None
-            
-            # 獲取詳細資訊
-            info = ticker.info or {}
-            hist = ticker.history(period="5d")
-            
-            # 計算技術指標
-            volume = 0
-            if len(hist) > 0:
-                volume = int(hist['Volume'].iloc[-1]) if not hist['Volume'].empty else 0
-            
-            # 獲取市值等資訊
-            market_cap = info.get('marketCap', 0)
-            pe_ratio = info.get('trailingPE', None)
-            
-            # 計算移動平均線
-            sma_20 = None
-            sma_50 = None
-            if len(hist) >= 20:
-                sma_20 = float(hist['Close'].rolling(20).mean().iloc[-1])
-            if len(hist) >= 50:
-                sma_50 = float(hist['Close'].rolling(50).mean().iloc[-1])
-            
-            # 構建返回數據
-            stock_data = {
-                'symbol': symbol.upper(),
-                'current_price': quote_data.get('price'),
-                'previous_close': quote_data.get('previous_close'),
-                'change': quote_data.get('change'),
-                'change_percent': f"{quote_data.get('change_pct', 0):.2f}" if quote_data.get('change_pct') else "0.00",
-                'volume': volume,
-                'market_cap': market_cap,
-                'pe_ratio': pe_ratio,
-                'currency': quote_data.get('currency', 'USD'),
-                'sma_20': sma_20,
-                'sma_50': sma_50,
-                'company_name': info.get('longName', symbol),
-                'sector': info.get('sector', '未知'),
-                'industry': info.get('industry', '未知'),
-                'timestamp': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'raw_info': info,  # 保留原始資訊供其他分析使用
-                'history': hist   # 保留歷史數據供技術分析使用
+            url = f"{self.base_url}/v8/finance/chart/{symbol}"
+            params = {
+                'interval': '1d',
+                'range': '5d',
+                'includePrePost': 'true'
             }
             
-            logger.info(f"成功獲取 {symbol} 股票數據")
-            return stock_data
+            data = self._make_request(url, params)
+            
+            if not data or 'chart' not in data:
+                return None
+                
+            chart_data = data['chart']
+            if not chart_data['result']:
+                return None
+                
+            result = chart_data['result'][0]
+            meta = result['meta']
+            
+            # 基本資訊
+            basic_info = {
+                'symbol': meta.get('symbol', symbol).upper(),
+                'longName': meta.get('longName', symbol),
+                'currency': meta.get('currency', 'USD'),
+                'exchangeName': meta.get('exchangeName', 'Unknown'),
+                'instrumentType': meta.get('instrumentType', 'EQUITY'),
+                'firstTradeDate': meta.get('firstTradeDate'),
+                'regularMarketTime': meta.get('regularMarketTime'),
+                'timezone': meta.get('timezone', 'America/New_York'),
+                'exchangeTimezoneName': meta.get('exchangeTimezoneName')
+            }
+            
+            return basic_info
             
         except Exception as e:
-            logger.error(f"獲取 {symbol} 股票數據時發生錯誤: {str(e)}")
+            logger.error(f"獲取基本資訊失敗 ({symbol}): {str(e)}")
             return None
     
-    async def get_multiple_quotes(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
-        """批量獲取多個股票的報價"""
-        results = {}
-        tasks = []
-        
-        for symbol in symbols:
-            task = self.get_stock_data(symbol)
-            tasks.append((symbol, task))
-        
-        for symbol, task in tasks:
-            try:
-                data = await task
-                if data:
-                    results[symbol] = data
-            except Exception as e:
-                logger.error(f"批量獲取 {symbol} 失敗: {str(e)}")
-                results[symbol] = None
-        
-        return results
+    def get_price_data(self, symbol, period='5d', interval='1d'):
+        """獲取價格數據"""
+        try:
+            url = f"{self.base_url}/v8/finance/chart/{symbol}"
+            params = {
+                'interval': interval,
+                'range': period,
+                'includePrePost': 'true'
+            }
+            
+            data = self._make_request(url, params)
+            
+            if not data or 'chart' not in data:
+                return None
+                
+            chart_data = data['chart']
+            if not chart_data['result']:
+                return None
+                
+            result = chart_data['result'][0]
+            meta = result['meta']
+            
+            # 價格相關數據
+            timestamps = result.get('timestamp', [])
+            indicators = result.get('indicators', {})
+            quote = indicators.get('quote', [{}])[0] if indicators.get('quote') else {}
+            
+            # 基本價格資訊
+            current_price = meta.get('regularMarketPrice')
+            previous_close = meta.get('previousClose')
+            
+            if current_price and previous_close:
+                change = current_price - previous_close
+                change_percent = (change / previous_close) * 100
+            else:
+                change = None
+                change_percent = None
+            
+            price_data = {
+                'symbol': meta.get('symbol', symbol).upper(),
+                'current_price': current_price,
+                'previous_close': previous_close,
+                'change': change,
+                'change_percent': change_percent,
+                'day_high': meta.get('regularMarketDayHigh'),
+                'day_low': meta.get('regularMarketDayLow'),
+                'day_volume': meta.get('regularMarketVolume'),
+                'fifty_two_week_high': meta.get('fiftyTwoWeekHigh'),
+                'fifty_two_week_low': meta.get('fiftyTwoWeekLow'),
+                'market_cap': meta.get('marketCap'),
+                'shares_outstanding': meta.get('sharesOutstanding'),
+                'forward_pe': meta.get('forwardPE'),
+                'trailing_pe': meta.get('trailingPE'),
+                'price_to_book': meta.get('priceToBook'),
+                'eps_ttm': meta.get('epsTrailingTwelveMonths'),
+                'dividend_yield': meta.get('dividendYield'),
+                'ex_dividend_date': meta.get('exDividendDate'),
+                'beta': meta.get('beta'),
+                'timestamps': timestamps,
+                'ohlcv': {
+                    'open': quote.get('open', []),
+                    'high': quote.get('high', []),
+                    'low': quote.get('low', []),
+                    'close': quote.get('close', []),
+                    'volume': quote.get('volume', [])
+                }
+            }
+            
+            return price_data
+            
+        except Exception as e:
+            logger.error(f"獲取價格數據失敗 ({symbol}): {str(e)}")
+            return None
     
-    # ---------- 技術分析輔助方法 ----------
-    def calculate_rsi(self, prices: pd.Series, period: int = 14) -> Optional[float]:
-        """計算 RSI 指標"""
+    def calculate_technical_indicators(self, price_data):
+        """計算技術指標"""
+        try:
+            if not price_data or 'ohlcv' not in price_data:
+                return {}
+            
+            closes = [price for price in price_data['ohlcv']['close'] if price is not None]
+            highs = [price for price in price_data['ohlcv']['high'] if price is not None]
+            lows = [price for price in price_data['ohlcv']['low'] if price is not None]
+            volumes = [vol for vol in price_data['ohlcv']['volume'] if vol is not None]
+            
+            if len(closes) < 2:
+                return {}
+            
+            indicators = {}
+            
+            # 移動平均線
+            if len(closes) >= 5:
+                indicators['sma_5'] = sum(closes[-5:]) / 5
+            if len(closes) >= 10:
+                indicators['sma_10'] = sum(closes[-10:]) / 10
+            if len(closes) >= 20:
+                indicators['sma_20'] = sum(closes[-20:]) / 20
+            if len(closes) >= 50:
+                indicators['sma_50'] = sum(closes[-50:]) / 50
+            
+            # RSI
+            if len(closes) >= 15:
+                indicators['rsi'] = self._calculate_rsi(closes)
+            
+            # MACD
+            if len(closes) >= 26:
+                macd_data = self._calculate_macd(closes)
+                indicators.update(macd_data)
+            
+            # 支撐阻力位
+            if len(highs) >= 5 and len(lows) >= 5:
+                indicators['resistance'] = max(highs[-20:]) if len(highs) >= 20 else max(highs)
+                indicators['support'] = min(lows[-20:]) if len(lows) >= 20 else min(lows)
+            
+            # 布林帶
+            if len(closes) >= 20:
+                bollinger = self._calculate_bollinger_bands(closes)
+                indicators.update(bollinger)
+            
+            # 成交量分析
+            if len(volumes) >= 20:
+                indicators['avg_volume_20'] = sum(volumes[-20:]) / 20
+                if volumes:
+                    indicators['volume_ratio'] = volumes[-1] / indicators['avg_volume_20']
+            
+            return indicators
+            
+        except Exception as e:
+            logger.error(f"計算技術指標失敗: {str(e)}")
+            return {}
+    
+    def _calculate_rsi(self, prices, period=14):
+        """計算 RSI"""
         try:
             if len(prices) < period + 1:
                 return None
             
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            gains = []
+            losses = []
             
-            rs = gain / loss
+            for i in range(1, len(prices)):
+                change = prices[i] - prices[i-1]
+                if change > 0:
+                    gains.append(change)
+                    losses.append(0)
+                else:
+                    gains.append(0)
+                    losses.append(abs(change))
+            
+            if len(gains) < period:
+                return None
+            
+            avg_gain = sum(gains[-period:]) / period
+            avg_loss = sum(losses[-period:]) / period
+            
+            if avg_loss == 0:
+                return 100
+            
+            rs = avg_gain / avg_loss
             rsi = 100 - (100 / (1 + rs))
-            return float(rsi.iloc[-1]) if not rsi.empty else None
-        except Exception as e:
-            logger.error(f"計算 RSI 失敗: {str(e)}")
+            
+            return round(rsi, 2)
+            
+        except Exception:
             return None
     
-    def calculate_bollinger_bands(self, prices: pd.Series, period: int = 20, std_dev: int = 2) -> Dict[str, Optional[float]]:
+    def _calculate_macd(self, prices, fast=12, slow=26, signal=9):
+        """計算 MACD"""
+        try:
+            if len(prices) < slow:
+                return {}
+            
+            # 計算 EMA
+            def ema(data, period):
+                multiplier = 2 / (period + 1)
+                ema_values = [data[0]]
+                for i in range(1, len(data)):
+                    ema_values.append((data[i] * multiplier) + (ema_values[-1] * (1 - multiplier)))
+                return ema_values
+            
+            ema_fast = ema(prices, fast)
+            ema_slow = ema(prices, slow)
+            
+            # MACD 線
+            macd_line = []
+            for i in range(len(ema_slow)):
+                if i < len(ema_fast):
+                    macd_line.append(ema_fast[i] - ema_slow[i])
+            
+            # Signal 線
+            if len(macd_line) >= signal:
+                signal_line = ema(macd_line, signal)
+            else:
+                signal_line = []
+            
+            # Histogram
+            histogram = []
+            for i in range(min(len(macd_line), len(signal_line))):
+                histogram.append(macd_line[i] - signal_line[i])
+            
+            return {
+                'macd': macd_line[-1] if macd_line else None,
+                'signal': signal_line[-1] if signal_line else None,
+                'histogram': histogram[-1] if histogram else None
+            }
+            
+        except Exception:
+            return {}
+    
+    def _calculate_bollinger_bands(self, prices, period=20, std_dev=2):
         """計算布林帶"""
         try:
             if len(prices) < period:
-                return {'upper': None, 'middle': None, 'lower': None}
+                return {}
             
-            sma = prices.rolling(window=period).mean()
-            std = prices.rolling(window=period).std()
+            recent_prices = prices[-period:]
+            sma = sum(recent_prices) / period
             
-            upper = sma + (std * std_dev)
-            lower = sma - (std * std_dev)
+            # 計算標準差
+            variance = sum([(price - sma) ** 2 for price in recent_prices]) / period
+            std = variance ** 0.5
+            
+            upper_band = sma + (std * std_dev)
+            lower_band = sma - (std * std_dev)
             
             return {
-                'upper': float(upper.iloc[-1]) if not upper.empty else None,
-                'middle': float(sma.iloc[-1]) if not sma.empty else None,
-                'lower': float(lower.iloc[-1]) if not lower.empty else None
+                'bb_upper': round(upper_band, 2),
+                'bb_middle': round(sma, 2),
+                'bb_lower': round(lower_band, 2)
             }
-        except Exception as e:
-            logger.error(f"計算布林帶失敗: {str(e)}")
-            return {'upper': None, 'middle': None, 'lower': None}
-
-    # ---------- 原有方法保持不變 ----------
-    def get_spot(self, symbol: str) -> Dict[str, Any]:
-        """Return last price (best-effort)."""
-        t = yf.Ticker(symbol)
-        info = t.fast_info or {}
-        price = info.get("last_price", None)
-        if price is None:
-            # fallback to latest close
-            try:
-                h = t.history(period="1d")
-                if len(h) > 0:
-                    price = float(h["Close"].iloc[-1])
-            except Exception:
-                price = 0.0
-        return {"symbol": symbol.upper(), "price": float(price or 0.0)}
-
-    def get_quote(self, symbol: str) -> Dict[str, Any]:
-        """Return price / previous_close / change / change_pct / currency (best-effort)."""
-        t = yf.Ticker(symbol)
-        info = t.fast_info or {}
-        currency = info.get("currency") or "USD"
-
-        price = info.get("last_price", None)
-        prev_close = info.get("previous_close", None)
-
-        # fallbacks
-        try:
-            if prev_close is None:
-                h = t.history(period="2d")
-                if len(h) >= 2:
-                    prev_close = float(h["Close"].iloc[-2])
+            
         except Exception:
-            prev_close = None
-        try:
-            if price is None:
-                h = t.history(period="1d")
-                if len(h) >= 1:
-                    price = float(h["Close"].iloc[-1])
-        except Exception:
-            price = None
-
-        chg = None
-        chg_pct = None
-        if price is not None and prev_close not in (None, 0):
-            chg = float(price) - float(prev_close)
-            chg_pct = (chg / float(prev_close)) * 100.0
-
-        return {
-            "symbol": symbol.upper(),
-            "price": float(price) if price is not None else None,
-            "previous_close": float(prev_close) if prev_close is not None else None,
-            "change": float(chg) if chg is not None else None,
-            "change_pct": float(chg_pct) if chg_pct is not None else None,
-            "currency": currency,
-        }
-
-    # ---------- Expirations ----------
-    def _list_expirations(self, symbol: str) -> List[str]:
-        exps = yf.Ticker(symbol).options or []
-        return [str(x) for x in exps]
-
-    def nearest_expiry(self, symbol: str) -> str:
-        """
-        Pick the nearest *upcoming* expiry (>= now). If all are in the past,
-        fallback to the absolute-closest one.
-        Always return YYYY-MM-DD.
-        """
-        exps = self._list_expirations(symbol)
-        if not exps:
-            raise ValueError(f"No expirations for {symbol}")
-        now = _utc_ts(pd.Timestamp.utcnow())
-
-        upcoming, past = [], []
-        for d in exps:
-            ts = _utc_ts(d)
-            (upcoming if ts >= now else past).append(ts)
-
-        if upcoming:
-            target = min(upcoming, key=lambda ts: ts - now)
-        else:
-            target = min(past, key=lambda ts: abs(ts - now))
-
-        return str(target.date())
-
-    # ---------- Options chain ----------
-    def get_options_chain(self, symbol: str, expiry: str) -> Dict[str, Any]:
-        """
-        Return normalized options chain:
-        {
-          symbol, expiry,
-          calls: [{type, strike, openInterest, impliedVolatility, T}],
-          puts:  [{...}],
-        }
-        """
-        tk = yf.Ticker(symbol)
-        exps = self._list_expirations(symbol)
-        if not exps:
-            raise ValueError(f"No options for {symbol}")
-
-        # snap expiry to closest available
-        if expiry not in exps:
-            exp_target = _utc_ts(expiry)
-            expiry = min(exps, key=lambda d: abs(_utc_ts(d) - exp_target))
-
-        chain = tk.option_chain(expiry)
-        calls = chain.calls.copy()
-        puts = chain.puts.copy()
-
-        for df in (calls, puts):
-            if "openInterest" not in df:
-                df["openInterest"] = 0
-            df["openInterest"] = df["openInterest"].fillna(0).astype(int)
-            df["strike"] = df["strike"].astype(float)
-            if "impliedVolatility" in df:
-                df["impliedVolatility"] = pd.to_numeric(df["impliedVolatility"], errors="coerce")
-
-        now = _utc_ts(pd.Timestamp.utcnow())
-        exp_ts = _utc_ts(expiry)
-        T = _year_fraction_365(now, exp_ts)
-
-        def recs(df, typ):
-            out = []
-            for _, r in df.iterrows():
-                out.append(
-                    {
-                        "type": typ,
-                        "strike": float(r["strike"]),
-                        "openInterest": int(r.get("openInterest", 0) or 0),
-                        "impliedVolatility": float(r["impliedVolatility"])
-                        if ("impliedVolatility" in r and pd.notna(r["impliedVolatility"]))
-                        else None,
-                        "T": float(T),
-                    }
-                )
-            return out
-
-        return {
-            "symbol": symbol.upper(),
-            "expiry": str(exp_ts.date()),
-            "calls": recs(calls, "call"),
-            "puts": recs(puts, "put"),
-        }
+            return {}
     
-    # ---------- 測試方法 ----------
-    def test_connection(self) -> bool:
+    def get_options_chain(self, symbol):
+        """獲取期權鏈數據"""
+        try:
+            # 先獲取可用的到期日
+            url = f"{self.base_url}/v7/finance/options/{symbol}"
+            data = self._make_request(url)
+            
+            if not data or 'optionChain' not in data:
+                return None
+            
+            option_chain = data['optionChain']
+            if not option_chain['result']:
+                return None
+            
+            result = option_chain['result'][0]
+            
+            # 獲取到期日列表
+            expiration_dates = result.get('expirationDates', [])
+            if not expiration_dates:
+                return None
+            
+            # 使用最近的到期日
+            nearest_expiry = expiration_dates[0]
+            
+            # 獲取該到期日的期權數據
+            url_with_date = f"{url}?date={nearest_expiry}"
+            data = self._make_request(url_with_date)
+            
+            if not data or 'optionChain' not in data:
+                return None
+            
+            result = data['optionChain']['result'][0]
+            options_data = result.get('options', [])
+            
+            if not options_data:
+                return None
+            
+            calls = options_data[0].get('calls', [])
+            puts = options_data[0].get('puts', [])
+            
+            # 期權到期日轉換
+            expiry_date = datetime.fromtimestamp(nearest_expiry).strftime('%Y-%m-%d')
+            
+            options_info = {
+                'symbol': symbol.upper(),
+                'expiry_date': expiry_date,
+                'expiry_timestamp': nearest_expiry,
+                'calls': calls,
+                'puts': puts,
+                'total_call_volume': sum([opt.get('volume', 0) for opt in calls]),
+                'total_put_volume': sum([opt.get('volume', 0) for opt in puts]),
+                'total_call_oi': sum([opt.get('openInterest', 0) for opt in calls]),
+                'total_put_oi': sum([opt.get('openInterest', 0) for opt in puts])
+            }
+            
+            return options_info
+            
+        except Exception as e:
+            logger.error(f"獲取期權鏈失敗 ({symbol}): {str(e)}")
+            return None
+    
+    def calculate_max_pain(self, options_data):
+        """計算 Max Pain"""
+        try:
+            if not options_data:
+                return None
+            
+            calls = options_data.get('calls', [])
+            puts = options_data.get('puts', [])
+            
+            if not calls and not puts:
+                return None
+            
+            # 收集所有執行價
+            strikes = set()
+            for call in calls:
+                if call.get('strike'):
+                    strikes.add(call['strike'])
+            for put in puts:
+                if put.get('strike'):
+                    strikes.add(put['strike'])
+            
+            if not strikes:
+                return None
+            
+            strikes = sorted(strikes)
+            min_pain = float('inf')
+            max_pain_strike = None
+            pain_data = []
+            
+            for strike in strikes:
+                total_pain = 0
+                
+                # Call 方損失
+                for call in calls:
+                    if call.get('strike', 0) < strike:
+                        pain = (strike - call['strike']) * call.get('openInterest', 0) * 100
+                        total_pain += pain
+                
+                # Put 方損失
+                for put in puts:
+                    if put.get('strike', 0) > strike:
+                        pain = (put['strike'] - strike) * put.get('openInterest', 0) * 100
+                        total_pain += pain
+                
+                pain_data.append({'strike': strike, 'pain': total_pain})
+                
+                if total_pain < min_pain:
+                    min_pain = total_pain
+                    max_pain_strike = strike
+            
+            return {
+                'max_pain_strike': max_pain_strike,
+                'min_total_pain': min_pain,
+                'pain_curve': pain_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Max Pain 計算失敗: {str(e)}")
+            return None
+    
+    def get_comprehensive_data(self, symbol):
+        """獲取綜合股票數據"""
+        try:
+            # 基本資訊
+            basic_info = self.get_basic_info(symbol)
+            if not basic_info:
+                return None
+            
+            # 價格數據
+            price_data = self.get_price_data(symbol)
+            if not price_data:
+                return None
+            
+            # 技術指標
+            technical_indicators = self.calculate_technical_indicators(price_data)
+            
+            # 期權數據（可選）
+            options_data = self.get_options_chain(symbol)
+            max_pain_data = None
+            if options_data:
+                max_pain_data = self.calculate_max_pain(options_data)
+            
+            # 整合所有數據
+            comprehensive_data = {
+                'basic_info': basic_info,
+                'price_data': price_data,
+                'technical_indicators': technical_indicators,
+                'options_data': options_data,
+                'max_pain_data': max_pain_data,
+                'timestamp': datetime.now().isoformat(),
+                'data_source': 'Yahoo Finance'
+            }
+            
+            return comprehensive_data
+            
+        except Exception as e:
+            logger.error(f"獲取綜合數據失敗 ({symbol}): {str(e)}")
+            return None
+    
+    def test_connection(self):
         """測試 Yahoo Finance 連接"""
         try:
-            test_data = self.get_quote("AAPL")
-            return test_data.get('price') is not None
-        except Exception as e:
-            logger.error(f"Yahoo Finance 連接測試失敗: {str(e)}")
+            test_data = self.get_basic_info("AAPL")
+            return test_data is not None
+        except Exception:
             return False
 
+# 使用範例
 if __name__ == "__main__":
-    # 測試代碼
-    import asyncio
+    # 創建提供者實例
+    yahoo = YahooFinanceProvider()
     
-    async def test():
-        provider = YahooProvider()
+    # 測試連接
+    if yahoo.test_connection():
+        print("✅ Yahoo Finance 連接成功")
         
-        # 測試連接
-        print("測試 Yahoo Finance 連接...")
-        if provider.test_connection():
-            print("✅ 連接成功")
-        else:
-            print("❌ 連接失敗")
-            return
-        
-        # 測試獲取股票數據
-        print("\n測試獲取 TSLA 數據...")
-        data = await provider.get_stock_data("TSLA")
+        # 獲取 AAPL 綜合數據
+        data = yahoo.get_comprehensive_data("AAPL")
         if data:
-            print(f"✅ 成功獲取 TSLA 數據:")
-            print(f"   價格: ${data['current_price']}")
-            print(f"   變動: {data['change']} ({data['change_percent']}%)")
-            print(f"   成交量: {data['volume']:,}")
+            print("✅ 成功獲取 AAPL 數據")
+            print(f"當前價格: ${data['price_data']['current_price']}")
+            print(f"技術指標數量: {len(data['technical_indicators'])}")
+            if data['max_pain_data']:
+                print(f"Max Pain: ${data['max_pain_data']['max_pain_strike']}")
         else:
-            print("❌ 獲取數據失敗")
-    
-    # 運行測試
-    asyncio.run(test())
+            print("❌ 無法獲取股票數據")
+    else:
+        print("❌ Yahoo Finance 連接失敗")
