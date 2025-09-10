@@ -3,13 +3,14 @@ import requests
 import logging
 from datetime import datetime, timedelta
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, List
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 class YahooProvider:
     def __init__(self, api_key=None):
-        self.api_key = api_key
+        self.yahoo_api_key = api_key or "NBWPE7OFZHTT3OFI"
         self.base_url = "https://query1.finance.yahoo.com/v8/finance/chart/"
         
     def get_stock_data(self, symbol: str) -> Dict:
@@ -44,6 +45,110 @@ class YahooProvider:
         
         # 所有方法都失敗
         raise Exception(f"無法獲取股票 {symbol} 的數據。最後錯誤: {last_error}")
+    
+    def nearest_expiry(self, symbol: str) -> Optional[str]:
+        """
+        獲取最近的期權到期日
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+            options = ticker.options
+            if options and len(options) > 0:
+                return options[0]  # 返回最近的到期日
+            return None
+        except Exception as e:
+            logger.error(f"獲取 {symbol} 期權到期日失敗: {e}")
+            return None
+    
+    def get_options_data(self, symbol: str, expiry_date: str = None) -> Dict:
+        """
+        獲取期權數據
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+            
+            # 如果沒有指定到期日，使用最近的
+            if not expiry_date:
+                expiry_date = self.nearest_expiry(symbol)
+                if not expiry_date:
+                    return {"error": "無可用的期權數據"}
+            
+            # 獲取期權鏈
+            option_chain = ticker.option_chain(expiry_date)
+            
+            calls = option_chain.calls
+            puts = option_chain.puts
+            
+            return {
+                "symbol": symbol,
+                "expiry_date": expiry_date,
+                "calls": calls.to_dict('records') if not calls.empty else [],
+                "puts": puts.to_dict('records') if not puts.empty else [],
+                "call_count": len(calls),
+                "put_count": len(puts)
+            }
+            
+        except Exception as e:
+            logger.error(f"獲取 {symbol} 期權數據失敗: {e}")
+            return {"error": str(e)}
+    
+    def calculate_max_pain(self, symbol: str, expiry_date: str = None) -> Dict:
+        """
+        計算 Max Pain 點
+        """
+        try:
+            options_data = self.get_options_data(symbol, expiry_date)
+            
+            if "error" in options_data:
+                return options_data
+            
+            calls = pd.DataFrame(options_data["calls"])
+            puts = pd.DataFrame(options_data["puts"])
+            
+            if calls.empty or puts.empty:
+                return {"error": "期權數據不足"}
+            
+            # 獲取所有執行價格
+            all_strikes = sorted(set(calls['strike'].tolist() + puts['strike'].tolist()))
+            
+            max_pain_data = []
+            
+            for strike in all_strikes:
+                call_pain = 0
+                put_pain = 0
+                
+                # 計算 Call 期權的痛苦值
+                for _, call in calls.iterrows():
+                    if strike > call['strike']:
+                        call_pain += call['openInterest'] * (strike - call['strike'])
+                
+                # 計算 Put 期權的痛苦值
+                for _, put in puts.iterrows():
+                    if strike < put['strike']:
+                        put_pain += put['openInterest'] * (put['strike'] - strike)
+                
+                total_pain = call_pain + put_pain
+                max_pain_data.append({
+                    'strike': strike,
+                    'total_pain': total_pain,
+                    'call_pain': call_pain,
+                    'put_pain': put_pain
+                })
+            
+            # 找到最大痛苦點
+            max_pain_point = min(max_pain_data, key=lambda x: x['total_pain'])
+            
+            return {
+                "symbol": symbol,
+                "expiry_date": options_data["expiry_date"],
+                "max_pain_strike": max_pain_point['strike'],
+                "max_pain_value": max_pain_point['total_pain'],
+                "all_strikes_data": max_pain_data
+            }
+            
+        except Exception as e:
+            logger.error(f"計算 {symbol} Max Pain 失敗: {e}")
+            return {"error": str(e)}
     
     def _validate_symbol_format(self, symbol: str) -> bool:
         """驗證股票代碼格式"""
@@ -128,9 +233,6 @@ class YahooProvider:
     
     def _get_data_fallback(self, symbol: str) -> Dict:
         """備用數據獲取方法"""
-        # 這裡可以集成其他數據源，如 Alpha Vantage, Polygon 等
-        # 目前返回基本的模擬數據以確保服務不中斷
-        
         logger.warning(f"使用備用方法獲取 {symbol} 數據")
         
         # 檢查是否為已知的主要股票
@@ -181,11 +283,9 @@ class YahooProvider:
         
         raise ValueError("無法獲取當前價格")
     
-    def search_symbol(self, query: str) -> list:
+    def search_symbol(self, query: str) -> List[Dict]:
         """搜索股票代碼"""
         try:
-            # 使用 yfinance 的搜索功能（如果可用）
-            # 這裡可以實現股票搜索邏輯
             query = query.upper().strip()
             
             # 簡單的符號匹配
@@ -209,6 +309,38 @@ class YahooProvider:
         except Exception as e:
             logger.error(f"搜索股票失敗: {e}")
             return []
+    
+    def get_sp500_list(self) -> List[str]:
+        """
+        獲取標普500股票清單
+        """
+        try:
+            # 從 Wikipedia 獲取標普500清單
+            url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+            tables = pd.read_html(url)
+            sp500_table = tables[0]
+            
+            # 提取股票代碼
+            symbols = sp500_table['Symbol'].tolist()
+            
+            # 清理符號（移除特殊字符）
+            clean_symbols = []
+            for symbol in symbols:
+                if isinstance(symbol, str):
+                    # 替換常見的特殊字符
+                    clean_symbol = symbol.replace('.', '-')
+                    clean_symbols.append(clean_symbol)
+            
+            return clean_symbols
+            
+        except Exception as e:
+            logger.error(f"獲取標普500清單失敗: {e}")
+            # 返回主要的股票作為備用
+            return [
+                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'BRK-B',
+                'UNH', 'JNJ', 'V', 'PG', 'JPM', 'HD', 'MA', 'BAC', 'ABBV', 'PFE',
+                'KO', 'AVGO', 'PEP', 'TMO', 'COST', 'DIS', 'ABT', 'MRK', 'VZ', 'ADBE'
+            ]
 
 # 測試函數
 def test_provider():
@@ -219,8 +351,24 @@ def test_provider():
     
     for symbol in test_symbols:
         try:
+            print(f"\n測試 {symbol}:")
+            
+            # 測試基本股票數據
             data = provider.get_stock_data(symbol)
-            print(f"✅ {symbol}: {data['name']} - ${data['current_price']}")
+            print(f"✅ 股票數據: {data['name']} - ${data['current_price']}")
+            
+            # 測試期權到期日
+            expiry = provider.nearest_expiry(symbol)
+            print(f"✅ 最近期權到期日: {expiry}")
+            
+            # 測試期權數據
+            if expiry:
+                options = provider.get_options_data(symbol, expiry)
+                if "error" not in options:
+                    print(f"✅ 期權數據: {options['call_count']} calls, {options['put_count']} puts")
+                else:
+                    print(f"⚠️ 期權數據: {options['error']}")
+            
         except Exception as e:
             print(f"❌ {symbol}: {e}")
 
