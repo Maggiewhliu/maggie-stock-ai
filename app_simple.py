@@ -51,15 +51,9 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("stock", stock_command))
     
-    if os.getenv('RENDER'):
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_url=f"https://maggie-stock-ai.onrender.com/{BOT_TOKEN}",
-            url_path=BOT_TOKEN
-        )
-    else:
-        application.run_polling()
+    # 暫時使用 polling 模式
+    logger.info("Using polling mode")
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
