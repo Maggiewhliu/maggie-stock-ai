@@ -23,46 +23,74 @@ class SP500StockBot:
         self.last_update = None
         
     def get_sp500_symbols(self):
-        """獲取標普500股票清單（使用固定清單確保穩定性）"""
+        """獲取標普500股票清單（使用擴展固定清單確保穩定性）"""
         if self.sp500_symbols:
             return self.sp500_symbols
             
-        # 主要標普500股票清單（固定版本，避免依賴問題）
+        # 完整標普500股票清單（固定版本，避免依賴問題）
         sp500_symbols = [
-            # 科技股
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'ORCL', 'CRM', 'ADBE',
+            # 科技股 - Technology
+            'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'TSLA', 'META', 'NVDA', 'ORCL', 'CRM',
             'NFLX', 'AMD', 'INTC', 'QCOM', 'CSCO', 'IBM', 'NOW', 'INTU', 'AMAT', 'ADI',
+            'MU', 'MRVL', 'KLAC', 'LRCX', 'SNPS', 'CDNS', 'FTNT', 'TEAM', 'WDAY', 'ZM',
+            'DOCU', 'OKTA', 'SPLK', 'VEEV', 'ZS', 'CRWD', 'DDOG', 'SNOW', 'NET', 'PLTR',
             
-            # 金融股
+            # 金融股 - Financial Services
             'JPM', 'BAC', 'WFC', 'GS', 'MS', 'BLK', 'SCHW', 'AXP', 'USB', 'PNC',
             'COF', 'TFC', 'BK', 'STT', 'FITB', 'HBAN', 'RF', 'CFG', 'KEY', 'ZION',
+            'AIG', 'PRU', 'MET', 'AFL', 'ALL', 'TRV', 'PGR', 'CB', 'AJG', 'MMC',
+            'AON', 'WTW', 'BRO', 'CINF', 'L', 'FNF', 'RJF', 'NTRS', 'IVZ', 'BEN',
             
-            # 醫療保健
+            # 醫療保健 - Healthcare
             'UNH', 'JNJ', 'PFE', 'ABBV', 'LLY', 'TMO', 'ABT', 'MDT', 'BMY', 'MRK',
             'DHR', 'CVS', 'CI', 'HUM', 'ANTM', 'SYK', 'GILD', 'ISRG', 'ZTS', 'BSX',
+            'ELV', 'REGN', 'VRTX', 'BIIB', 'ILMN', 'MRNA', 'AMGN', 'CELG', 'IDXX', 'IQV',
+            'A', 'RMD', 'DXCM', 'EW', 'ZBH', 'STE', 'HOLX', 'ALGN', 'TFX', 'COO',
             
-            # 消費品
+            # 消費品 - Consumer Discretionary & Staples
             'PG', 'KO', 'PEP', 'WMT', 'HD', 'MCD', 'NKE', 'SBUX', 'TGT', 'LOW',
             'COST', 'DIS', 'CMCSA', 'VZ', 'T', 'TMUS', 'CL', 'KMB', 'GIS', 'K',
+            'AMZN', 'TSLA', 'F', 'GM', 'NFLX', 'DIS', 'CMCSA', 'CHTR', 'PARA', 'WBD',
+            'GPS', 'M', 'JWN', 'NCLH', 'CCL', 'RCL', 'MGM', 'WYNN', 'LVS', 'PENN',
             
-            # 工業股
+            # 工業股 - Industrials
             'BA', 'CAT', 'GE', 'MMM', 'HON', 'UPS', 'RTX', 'LMT', 'NOC', 'GD',
             'DE', 'EMR', 'ETN', 'ITW', 'PH', 'CMI', 'FDX', 'NSC', 'UNP', 'CSX',
+            'LUV', 'DAL', 'UAL', 'AAL', 'JBLU', 'ALK', 'SAVE', 'WAB', 'TXT', 'ROK',
+            'DOV', 'IR', 'FAST', 'PCAR', 'CHRW', 'EXPD', 'JBHT', 'KNX', 'SWK', 'PKG',
             
-            # 能源股
+            # 能源股 - Energy
             'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX', 'VLO', 'HES', 'DVN',
+            'KMI', 'OKE', 'WMB', 'EPD', 'ET', 'MPLX', 'PAGP', 'BKR', 'HAL', 'FTI',
+            'NOV', 'RIG', 'VAL', 'MRO', 'APA', 'FANG', 'PXD', 'CXO', 'OVV', 'CLR',
             
-            # 材料股
+            # 材料股 - Materials
             'LIN', 'APD', 'ECL', 'FCX', 'NEM', 'DOW', 'DD', 'PPG', 'SHW', 'NUE',
+            'VMC', 'MLM', 'FMC', 'LYB', 'CF', 'MOS', 'IFF', 'ALB', 'CE', 'PKX',
+            'RPM', 'EMN', 'IP', 'WRK', 'SON', 'SEE', 'AVY', 'BALL', 'CCK', 'SLGN',
             
-            # 公用事業
+            # 公用事業 - Utilities
             'NEE', 'DUK', 'SO', 'AEP', 'EXC', 'XEL', 'WEC', 'ED', 'ETR', 'ES',
+            'AWK', 'PEG', 'SRE', 'D', 'PCG', 'EIX', 'PPL', 'CMS', 'DTE', 'ATO',
+            'CNP', 'NI', 'LNT', 'EVRG', 'AES', 'FE', 'PNW', 'NRG', 'VST', 'CEG',
             
-            # 房地產
+            # 房地產 - Real Estate
             'AMT', 'PLD', 'CCI', 'EQIX', 'SPG', 'O', 'WELL', 'DLR', 'PSA', 'EQR',
+            'AVB', 'VTR', 'ARE', 'SBAC', 'UDR', 'ESS', 'MAA', 'KIM', 'REG', 'FRT',
+            'BXP', 'HST', 'SLG', 'VNO', 'PEAK', 'AMH', 'EXR', 'CPT', 'AIV', 'BRX',
+            
+            # 金融服務 - Financial (Payment processors, etc.)
+            'V', 'MA', 'PYPL', 'SQ', 'FIS', 'FISV', 'ADP', 'PAYX', 'IT', 'ACN',
+            'TXN', 'AVGO', 'AAPL', 'MSFT', 'QCOM', 'NOW', 'CRM', 'ORCL', 'IBM', 'HPQ',
+            
+            # 大型綜合企業 - Diversified
+            'BRK-B', 'JNJ', 'UNH', 'XOM', 'PG', 'TSLA', 'NVDA', 'META', 'GOOGL', 'AMZN',
+            'GE', 'MMM', 'WMT', 'JPM', 'V', 'MA', 'HD', 'PFE', 'VZ', 'DIS',
             
             # 其他重要股票
-            'BRK-B', 'V', 'MA', 'AVGO', 'ACN', 'TXN', 'LIN', 'UNP', 'JNJ', 'PG'
+            'COST', 'NFLX', 'CRM', 'AMD', 'TMO', 'ABT', 'DHR', 'LIN', 'UNP', 'LOW',
+            'QCOM', 'INTC', 'IBM', 'ORCL', 'CSCO', 'TXN', 'AVGO', 'HON', 'UPS', 'CAT',
+            'BA', 'MMM', 'WM', 'GD', 'RTX', 'LMT', 'NOC', 'SPGI', 'CME', 'ICE'
         ]
         
         # 去重並排序
@@ -91,7 +119,7 @@ class SP500StockBot:
                 return None
             
             # 獲取歷史數據作為備用
-            hist = ticker.history(period="2d")
+            hist = ticker.history(period="5d")
             
             # 提取價格信息
             current_price = None
@@ -136,6 +164,10 @@ class SP500StockBot:
             market_cap = info.get('marketCap')
             pe_ratio = info.get('trailingPE') or info.get('forwardPE')
             
+            # 獲取52週高低點
+            fifty_two_week_high = info.get('fiftyTwoWeekHigh')
+            fifty_two_week_low = info.get('fiftyTwoWeekLow')
+            
             return {
                 'symbol': symbol,
                 'name': info.get('shortName') or info.get('longName', symbol),
@@ -147,6 +179,8 @@ class SP500StockBot:
                 'volume_str': volume_str,
                 'market_cap': market_cap,
                 'pe_ratio': pe_ratio,
+                'fifty_two_week_high': fifty_two_week_high,
+                'fifty_two_week_low': fifty_two_week_low,
                 'data_source': 'Yahoo Finance (Live)',
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
@@ -184,16 +218,22 @@ class SP500StockBot:
         # P/E 比率
         pe_str = f"{data['pe_ratio']:.2f}" if data.get('pe_ratio') and data['pe_ratio'] > 0 else "N/A"
         
+        # 52週高低點
+        high_52w = f"${data['fifty_two_week_high']:.2f}" if data.get('fifty_two_week_high') else "N/A"
+        low_52w = f"${data['fifty_two_week_low']:.2f}" if data.get('fifty_two_week_low') else "N/A"
+        
         message = f"""{change_emoji} **{data['name']} ({data['symbol']})**
 
-💰 **Price:** ${data['current_price']:.2f}
+💰 **Current Price:** ${data['current_price']:.2f}
 📊 **Change:** {change_sign}${abs(data['change']):.2f} ({change_sign}{abs(data['change_percent']):.2f}%)
 📈 **Volume:** {data['volume_str']}
 🏢 **Market Cap:** {market_cap_str}
 📋 **P/E Ratio:** {pe_str}
+📊 **52W High:** {high_52w}
+📊 **52W Low:** {low_52w}
 
 🕐 **Updated:** {data['timestamp']}
-📡 **Source:** {data['data_source']}
+📡 **Data Source:** {data['data_source']}
 
 ---
 *Maggie Stock AI - Real-time S&P 500 Data*"""
@@ -210,6 +250,37 @@ def clear_webhook():
         return result.get('ok', False)
     except Exception as e:
         logger.error(f"Failed to clear webhook: {e}")
+        return False
+
+def set_webhook():
+    """設置 webhook"""
+    try:
+        # 獲取 Render 應用的 URL
+        render_url = os.getenv('RENDER_EXTERNAL_URL')
+        if not render_url:
+            # 如果沒有環境變量，使用預設
+            render_url = "https://maggie-stock-ai.onrender.com"
+        
+        webhook_url = f"{render_url}/{BOT_TOKEN}"
+        
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
+        data = {
+            'url': webhook_url,
+            'allowed_updates': ['message', 'callback_query']
+        }
+        
+        response = requests.post(url, json=data, timeout=10)
+        result = response.json()
+        
+        if result.get('ok'):
+            logger.info(f"Webhook set successfully: {webhook_url}")
+            return True
+        else:
+            logger.error(f"Failed to set webhook: {result}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error setting webhook: {e}")
         return False
 
 # 初始化機器人實例
@@ -236,11 +307,17 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 檢查是否為支援的股票
         sp500_symbols = bot.get_sp500_symbols()
         if symbol not in sp500_symbols:
+            # 提供相似的股票建議
+            suggestions = [s for s in sp500_symbols if symbol in s or s.startswith(symbol[:2])][:5]
+            suggestion_text = ""
+            if suggestions:
+                suggestion_text = f"\n\n**Similar stocks:** {', '.join(suggestions)}"
+            
             await update.message.reply_text(
-                f"Stock symbol '{symbol}' is not in our S&P 500 database.\n\n"
-                f"**Supported:** {len(sp500_symbols)} S&P 500 stocks\n"
+                f"❌ Stock symbol '{symbol}' is not in our S&P 500 database.\n\n"
+                f"**Database:** {len(sp500_symbols)} S&P 500 stocks\n"
                 f"**Popular:** AAPL, MSFT, GOOGL, AMZN, TSLA, META, NVDA\n"
-                f"**Use:** /list to see more options"
+                f"**Use:** /list to see categories{suggestion_text}"
             )
             return
         
@@ -261,10 +338,11 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await processing_msg.edit_text(
                 f"❌ **Unable to fetch data for {symbol}**\n\n"
                 f"This might be due to:\n"
-                f"• Market is closed\n"
-                f"• Temporary API issues\n"
-                f"• Stock delisted or suspended\n\n"
-                f"Please try again later or try another stock."
+                f"• Market is currently closed\n"
+                f"• Temporary Yahoo Finance API issues\n"
+                f"• Stock delisted or suspended\n"
+                f"• Network connectivity problems\n\n"
+                f"Please try again in a few minutes or try another stock."
             )
             
     except Exception as e:
@@ -279,38 +357,48 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_message = f"""🤖 **Welcome to Maggie Stock AI!**
 
-I provide real-time analysis for S&P 500 stocks.
+I provide real-time analysis for S&P 500 stocks with enhanced features.
 
 📊 **Features:**
 • Live stock prices from Yahoo Finance
 • {sp500_count} S&P 500 stocks supported
-• Market cap and P/E ratios
-• Real-time price changes
+• Market cap, P/E ratios, and 52-week ranges
+• Real-time price changes with trend indicators
+• Professional financial metrics
 
-💡 **Usage:**
+💡 **Quick Commands:**
 • `/stock AAPL` - Get Apple stock data
 • `/stock TSLA` - Get Tesla stock data
-• `/list` - See popular stocks
+• `/list` - Browse stocks by sector
+• `/help` - Complete command guide
 
-🎯 **Core Value:**
+🎯 **Core Philosophy:**
 "Real-time data beats delayed information"
 
+✨ **New Features:**
+• 52-week high/low tracking
+• Enhanced stock suggestions
+• Expanded S&P 500 coverage
+
 ---
-Built with precision by Maggie"""
+🔧 Built with precision by Maggie
+📈 Powered by Yahoo Finance API"""
     
     await update.message.reply_text(welcome_message)
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """顯示熱門股票清單"""
     popular_stocks = {
-        'Tech Giants': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA'],
-        'Finance': ['JPM', 'BAC', 'WFC', 'GS', 'BLK', 'AXP'],
-        'Healthcare': ['UNH', 'JNJ', 'PFE', 'ABBV', 'LLY', 'TMO'],
-        'Consumer': ['WMT', 'HD', 'PG', 'KO', 'PEP', 'MCD', 'NKE'],
-        'Industrial': ['BA', 'CAT', 'GE', 'MMM', 'HON', 'UPS']
+        '🚀 Tech Giants': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA', 'ORCL'],
+        '🏦 Financial': ['JPM', 'BAC', 'WFC', 'GS', 'BLK', 'AXP', 'V', 'MA'],
+        '🏥 Healthcare': ['UNH', 'JNJ', 'PFE', 'ABBV', 'LLY', 'TMO', 'ABT', 'MDT'],
+        '🛒 Consumer': ['WMT', 'HD', 'PG', 'KO', 'PEP', 'MCD', 'NKE', 'COST'],
+        '🏭 Industrial': ['BA', 'CAT', 'GE', 'MMM', 'HON', 'UPS', 'RTX', 'LMT'],
+        '⚡ Energy': ['XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC'],
+        '🏠 Real Estate': ['AMT', 'PLD', 'CCI', 'EQIX', 'SPG', 'O']
     }
     
-    message = "📈 **Popular S&P 500 Stocks by Sector:**\n\n"
+    message = "📈 **S&P 500 Stocks by Sector:**\n\n"
     
     for sector, stocks in popular_stocks.items():
         message += f"**{sector}:**\n"
@@ -319,7 +407,8 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += "\n"
     
     sp500_count = len(bot.get_sp500_symbols())
-    message += f"💡 **Total supported:** {sp500_count} S&P 500 stocks"
+    message += f"💡 **Total coverage:** {sp500_count} S&P 500 stocks\n"
+    message += f"🔍 **Tip:** Type stock symbol directly to get suggestions"
     
     await update.message.reply_text(message)
 
@@ -327,55 +416,95 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理 /help 命令"""
     sp500_count = len(bot.get_sp500_symbols())
     
-    help_message = f"""📚 **Maggie Stock AI Help**
+    help_message = f"""📚 **Maggie Stock AI - Complete Guide**
 
-**Commands:**
-• `/stock [SYMBOL]` - Get real-time stock data
-• `/list` - Show popular stocks by sector
-• `/help` - Show this help
+**🔧 Commands:**
+• `/stock [SYMBOL]` - Get comprehensive stock data
+• `/list` - Browse stocks organized by sector
+• `/help` - Show this complete guide
+• `/start` - Welcome screen and overview
 
-**Data Coverage:**
-• {sp500_count} S&P 500 companies
-• Real-time prices via Yahoo Finance
-• Market cap, P/E ratios, volume
+**📊 Data Coverage:**
+• {sp500_count} S&P 500 companies tracked
+• Real-time prices via Yahoo Finance API
+• Market cap, P/E ratios, trading volume
+• 52-week high/low price ranges
+• Daily price change with percentages
 
-**Examples:**
-• `/stock AAPL` - Apple Inc.
-• `/stock MSFT` - Microsoft Corp.
-• `/stock GOOGL` - Alphabet Inc.
+**💡 Usage Examples:**
+• `/stock AAPL` - Apple Inc. analysis
+• `/stock MSFT` - Microsoft Corporation
+• `/stock GOOGL` - Alphabet Inc. (Google)
+• `/stock TSLA` - Tesla Inc.
 
-**Features:**
-• Live price updates
-• Change indicators (📈📉)
+**✨ Advanced Features:**
+• Live price updates during market hours
+• Trend indicators (📈📉➡️)
 • Professional financial metrics
 • Sector-based stock organization
+• Smart stock symbol suggestions
 
-Need support? The bot is built by Maggie"""
+**⏰ Market Hours:**
+• US Market: 9:30 AM - 4:00 PM EST
+• Pre/Post market data available
+• Weekend data shows Friday close
+
+**🛠️ Troubleshooting:**
+• No data? Market might be closed
+• Wrong symbol? Use `/list` to browse
+• Error? Try again in a few minutes
+
+**📞 Support:**
+Built by Maggie with ❤️ for investors
+Data powered by Yahoo Finance"""
     
     await update.message.reply_text(help_message)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理一般文字訊息"""
-    text = update.message.text.upper()
+    text = update.message.text.upper().strip()
     
-    # 檢查是否包含支援的股票代碼
-    sp500_symbols = bot.get_sp500_symbols()
+    # 檢查是否為股票代碼格式 (2-5 個字母)
+    if len(text) >= 2 and len(text) <= 5 and text.isalpha():
+        sp500_symbols = bot.get_sp500_symbols()
+        
+        if text in sp500_symbols:
+            await update.message.reply_text(
+                f"💡 Found '{text}' in S&P 500!\n"
+                f"Use `/stock {text}` to get real-time data."
+            )
+            return
+        else:
+            # 提供相似的股票建議
+            suggestions = [s for s in sp500_symbols if text in s or s.startswith(text[:2])][:3]
+            if suggestions:
+                await update.message.reply_text(
+                    f"'{text}' not found in S&P 500.\n\n"
+                    f"**Similar stocks:**\n" +
+                    "\n".join([f"• `/stock {s}`" for s in suggestions])
+                )
+                return
+    
+    # 檢查是否包含知名股票代碼
     popular_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'WMT', 'KO']
     
     for symbol in popular_symbols:
         if symbol in text:
             await update.message.reply_text(
                 f"💡 I detected '{symbol}' in your message!\n"
-                f"Use `/stock {symbol}` to get real-time data."
+                f"Use `/stock {symbol}` to get real-time analysis."
             )
             return
     
     # 一般回應
-    await update.message.reply_text(
-        "Hello! I'm Maggie Stock AI 🤖\n\n"
-        "I provide real-time S&P 500 stock data.\n"
-        "Use `/stock AAPL` or `/help` for more info."
-    )
+    responses = [
+        "Hello! I'm Maggie Stock AI 🤖\n\nI specialize in real-time S&P 500 stock analysis.\nTry `/stock AAPL` or `/help` for guidance.",
+        "Hi there! 👋\n\nI provide live financial data for S&P 500 stocks.\nUse `/list` to browse by sector or `/stock [SYMBOL]` for analysis.",
+        "Welcome! 📈\n\nI'm here to help with stock market data.\nType `/help` for commands or try `/stock MSFT` for a demo."
+    ]
+    
+    import random
+    await update.message.reply_text(random.choice(responses))
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """處理錯誤"""
@@ -383,10 +512,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """主函數"""
-    logger.info("Starting Maggie Stock AI Bot with S&P 500 real data...")
+    logger.info("Starting Maggie Stock AI Bot with enhanced S&P 500 coverage...")
     
     # 預載標普500清單
-    logger.info("Pre-loading S&P 500 symbols...")
+    logger.info("Pre-loading expanded S&P 500 symbols...")
     symbols = bot.get_sp500_symbols()
     logger.info(f"Successfully loaded {len(symbols)} S&P 500 symbols")
     
@@ -416,15 +545,21 @@ def main():
     if os.getenv('RENDER'):
         logger.info(f"Running in Render deployment mode on port {PORT}")
         try:
-            application.run_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                webhook_url=f"https://maggie-stock-ai.onrender.com/{BOT_TOKEN}",
-                url_path=BOT_TOKEN,
-                allowed_updates=Update.ALL_TYPES
-            )
+            # 設置 webhook
+            if set_webhook():
+                logger.info("Webhook set successfully, starting webhook server...")
+                application.run_webhook(
+                    listen="0.0.0.0",
+                    port=PORT,
+                    webhook_url=f"{os.getenv('RENDER_EXTERNAL_URL', 'https://maggie-stock-ai.onrender.com')}/{BOT_TOKEN}",
+                    url_path=BOT_TOKEN,
+                    allowed_updates=Update.ALL_TYPES
+                )
+            else:
+                logger.warning("Webhook setup failed, falling back to polling...")
+                application.run_polling(allowed_updates=Update.ALL_TYPES)
         except Exception as e:
-            logger.error(f"Webhook failed: {e}")
+            logger.error(f"Webhook mode failed: {e}")
             logger.info("Falling back to polling mode...")
             application.run_polling(allowed_updates=Update.ALL_TYPES)
     else:
