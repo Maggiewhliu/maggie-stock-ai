@@ -3,7 +3,6 @@ import os
 import logging
 import requests
 import yfinance as yf
-import pandas as pd
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -22,46 +21,58 @@ class SP500StockBot:
     def __init__(self):
         self.sp500_symbols = None
         self.last_update = None
-        self.cache_duration = timedelta(hours=24)  # 每天更新一次標普500清單
         
     def get_sp500_symbols(self):
-        """獲取標普500股票清單"""
-        try:
-            # 檢查緩存是否有效
-            if (self.sp500_symbols and self.last_update and 
-                datetime.now() - self.last_update < self.cache_duration):
-                return self.sp500_symbols
+        """獲取標普500股票清單（使用固定清單確保穩定性）"""
+        if self.sp500_symbols:
+            return self.sp500_symbols
             
-            logger.info("Fetching S&P 500 symbols...")
+        # 主要標普500股票清單（固定版本，避免依賴問題）
+        sp500_symbols = [
+            # 科技股
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'ORCL', 'CRM', 'ADBE',
+            'NFLX', 'AMD', 'INTC', 'QCOM', 'CSCO', 'IBM', 'NOW', 'INTU', 'AMAT', 'ADI',
             
-            # 從 Wikipedia 獲取標普500清單
-            url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-            tables = pd.read_html(url)
-            sp500_table = tables[0]
+            # 金融股
+            'JPM', 'BAC', 'WFC', 'GS', 'MS', 'BLK', 'SCHW', 'AXP', 'USB', 'PNC',
+            'COF', 'TFC', 'BK', 'STT', 'FITB', 'HBAN', 'RF', 'CFG', 'KEY', 'ZION',
             
-            # 提取並清理股票代碼
-            symbols = []
-            for symbol in sp500_table['Symbol'].tolist():
-                if isinstance(symbol, str):
-                    # 處理特殊字符（如 BRK.B -> BRK-B）
-                    clean_symbol = symbol.replace('.', '-')
-                    symbols.append(clean_symbol)
+            # 醫療保健
+            'UNH', 'JNJ', 'PFE', 'ABBV', 'LLY', 'TMO', 'ABT', 'MDT', 'BMY', 'MRK',
+            'DHR', 'CVS', 'CI', 'HUM', 'ANTM', 'SYK', 'GILD', 'ISRG', 'ZTS', 'BSX',
             
-            self.sp500_symbols = symbols
-            self.last_update = datetime.now()
+            # 消費品
+            'PG', 'KO', 'PEP', 'WMT', 'HD', 'MCD', 'NKE', 'SBUX', 'TGT', 'LOW',
+            'COST', 'DIS', 'CMCSA', 'VZ', 'T', 'TMUS', 'CL', 'KMB', 'GIS', 'K',
             
-            logger.info(f"Successfully loaded {len(symbols)} S&P 500 symbols")
-            return symbols
+            # 工業股
+            'BA', 'CAT', 'GE', 'MMM', 'HON', 'UPS', 'RTX', 'LMT', 'NOC', 'GD',
+            'DE', 'EMR', 'ETN', 'ITW', 'PH', 'CMI', 'FDX', 'NSC', 'UNP', 'CSX',
             
-        except Exception as e:
-            logger.error(f"Failed to fetch S&P 500 symbols: {e}")
-            # 返回主要股票作為備用
-            return [
-                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'BRK-B',
-                'UNH', 'JNJ', 'V', 'PG', 'JPM', 'HD', 'MA', 'BAC', 'ABBV', 'PFE',
-                'KO', 'AVGO', 'PEP', 'TMO', 'COST', 'DIS', 'ABT', 'MRK', 'VZ', 'ADBE',
-                'CRM', 'ACN', 'LLY', 'NFLX', 'NKE', 'WMT', 'ORCL', 'CSCO', 'XOM'
-            ]
+            # 能源股
+            'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'MPC', 'PSX', 'VLO', 'HES', 'DVN',
+            
+            # 材料股
+            'LIN', 'APD', 'ECL', 'FCX', 'NEM', 'DOW', 'DD', 'PPG', 'SHW', 'NUE',
+            
+            # 公用事業
+            'NEE', 'DUK', 'SO', 'AEP', 'EXC', 'XEL', 'WEC', 'ED', 'ETR', 'ES',
+            
+            # 房地產
+            'AMT', 'PLD', 'CCI', 'EQIX', 'SPG', 'O', 'WELL', 'DLR', 'PSA', 'EQR',
+            
+            # 其他重要股票
+            'BRK-B', 'V', 'MA', 'AVGO', 'ACN', 'TXN', 'LIN', 'UNP', 'JNJ', 'PG'
+        ]
+        
+        # 去重並排序
+        sp500_symbols = sorted(list(set(sp500_symbols)))
+        
+        self.sp500_symbols = sp500_symbols
+        self.last_update = datetime.now()
+        
+        logger.info(f"Loaded {len(sp500_symbols)} S&P 500 symbols")
+        return sp500_symbols
     
     async def get_real_stock_data(self, symbol):
         """獲取真實股票數據"""
@@ -75,49 +86,67 @@ class SP500StockBot:
             info = ticker.info
             
             # 檢查股票是否有效
-            if not info or 'symbol' not in info:
+            if not info or len(info) < 5:
+                logger.warning(f"Invalid or insufficient data for {symbol}")
                 return None
             
-            # 獲取歷史數據（最近2天）
+            # 獲取歷史數據作為備用
             hist = ticker.history(period="2d")
-            if hist.empty:
-                return None
             
             # 提取價格信息
-            current_price = info.get('currentPrice')
-            if not current_price:
-                current_price = hist['Close'][-1]
+            current_price = None
+            price_fields = ['currentPrice', 'regularMarketPrice', 'previousClose']
             
+            for field in price_fields:
+                if field in info and info[field]:
+                    current_price = float(info[field])
+                    break
+            
+            # 如果從info獲取不到，使用歷史數據
+            if not current_price and not hist.empty:
+                current_price = float(hist['Close'][-1])
+            
+            if not current_price:
+                logger.warning(f"No price data available for {symbol}")
+                return None
+            
+            # 獲取前一交易日收盤價
             previous_close = info.get('previousClose')
             if not previous_close and len(hist) > 1:
-                previous_close = hist['Close'][-2]
+                previous_close = float(hist['Close'][-2])
             elif not previous_close:
                 previous_close = current_price
+            else:
+                previous_close = float(previous_close)
             
             # 計算變動
             change = current_price - previous_close
             change_percent = (change / previous_close) * 100 if previous_close != 0 else 0
             
             # 格式化成交量
-            volume = info.get('volume', 0)
+            volume = info.get('volume', 0) or info.get('regularMarketVolume', 0)
             if volume > 1000000:
                 volume_str = f"{volume/1000000:.1f}M"
             elif volume > 1000:
                 volume_str = f"{volume/1000:.1f}K"
             else:
-                volume_str = str(volume)
+                volume_str = str(volume) if volume else "N/A"
+            
+            # 獲取其他信息
+            market_cap = info.get('marketCap')
+            pe_ratio = info.get('trailingPE') or info.get('forwardPE')
             
             return {
                 'symbol': symbol,
                 'name': info.get('shortName') or info.get('longName', symbol),
-                'current_price': float(current_price),
-                'previous_close': float(previous_close),
-                'change': float(change),
-                'change_percent': float(change_percent),
+                'current_price': current_price,
+                'previous_close': previous_close,
+                'change': change,
+                'change_percent': change_percent,
                 'volume': volume,
                 'volume_str': volume_str,
-                'market_cap': info.get('marketCap'),
-                'pe_ratio': info.get('trailingPE'),
+                'market_cap': market_cap,
+                'pe_ratio': pe_ratio,
                 'data_source': 'Yahoo Finance (Live)',
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
@@ -132,12 +161,19 @@ class SP500StockBot:
             return "Unable to fetch stock data."
         
         # 格式化變動顯示
-        change_emoji = "📈" if data['change'] >= 0 else "📉"
-        change_sign = "+" if data['change'] >= 0 else ""
+        if data['change'] > 0:
+            change_emoji = "📈"
+            change_sign = "+"
+        elif data['change'] < 0:
+            change_emoji = "📉"
+            change_sign = ""
+        else:
+            change_emoji = "➡️"
+            change_sign = ""
         
         # 市值格式化
         market_cap_str = "N/A"
-        if data.get('market_cap'):
+        if data.get('market_cap') and data['market_cap'] > 0:
             if data['market_cap'] > 1000000000000:  # 兆
                 market_cap_str = f"${data['market_cap']/1000000000000:.2f}T"
             elif data['market_cap'] > 1000000000:  # 億
@@ -146,7 +182,7 @@ class SP500StockBot:
                 market_cap_str = f"${data['market_cap']/1000000:.1f}M"
         
         # P/E 比率
-        pe_str = f"{data['pe_ratio']:.2f}" if data.get('pe_ratio') else "N/A"
+        pe_str = f"{data['pe_ratio']:.2f}" if data.get('pe_ratio') and data['pe_ratio'] > 0 else "N/A"
         
         message = f"""{change_emoji} **{data['name']} ({data['symbol']})**
 
@@ -184,14 +220,14 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if not context.args:
             sp500_symbols = bot.get_sp500_symbols()
-            sample_symbols = sp500_symbols[:10]  # 顯示前10個作為示例
+            sample_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'WMT', 'KO']
             
             await update.message.reply_text(
                 f"**Usage:** /stock [SYMBOL]\n\n"
                 f"**S&P 500 Support:** {len(sp500_symbols)} stocks available\n\n"
-                f"**Examples:**\n" +
+                f"**Popular Examples:**\n" +
                 "\n".join([f"• /stock {symbol}" for symbol in sample_symbols]) +
-                f"\n\n**Popular stocks:** AAPL, MSFT, GOOGL, AMZN, TSLA, META, NVDA"
+                f"\n\n**Try:** /list for more options"
             )
             return
         
@@ -201,9 +237,10 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sp500_symbols = bot.get_sp500_symbols()
         if symbol not in sp500_symbols:
             await update.message.reply_text(
-                f"Stock symbol '{symbol}' is not in the S&P 500.\n\n"
+                f"Stock symbol '{symbol}' is not in our S&P 500 database.\n\n"
                 f"**Supported:** {len(sp500_symbols)} S&P 500 stocks\n"
-                f"**Examples:** AAPL, MSFT, GOOGL, AMZN, TSLA"
+                f"**Popular:** AAPL, MSFT, GOOGL, AMZN, TSLA, META, NVDA\n"
+                f"**Use:** /list to see more options"
             )
             return
         
@@ -226,8 +263,8 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"This might be due to:\n"
                 f"• Market is closed\n"
                 f"• Temporary API issues\n"
-                f"• Stock symbol not found\n\n"
-                f"Please try again later."
+                f"• Stock delisted or suspended\n\n"
+                f"Please try again later or try another stock."
             )
             
     except Exception as e:
@@ -242,7 +279,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_message = f"""🤖 **Welcome to Maggie Stock AI!**
 
-I provide real-time analysis for all S&P 500 stocks.
+I provide real-time analysis for S&P 500 stocks.
 
 📊 **Features:**
 • Live stock prices from Yahoo Finance
@@ -265,18 +302,24 @@ Built with precision by Maggie"""
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """顯示熱門股票清單"""
-    popular_stocks = [
-        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA',
-        'BRK-B', 'UNH', 'JNJ', 'V', 'PG', 'JPM', 'HD', 'MA'
-    ]
+    popular_stocks = {
+        'Tech Giants': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA'],
+        'Finance': ['JPM', 'BAC', 'WFC', 'GS', 'BLK', 'AXP'],
+        'Healthcare': ['UNH', 'JNJ', 'PFE', 'ABBV', 'LLY', 'TMO'],
+        'Consumer': ['WMT', 'HD', 'PG', 'KO', 'PEP', 'MCD', 'NKE'],
+        'Industrial': ['BA', 'CAT', 'GE', 'MMM', 'HON', 'UPS']
+    }
     
-    message = "📈 **Popular S&P 500 Stocks:**\n\n"
+    message = "📈 **Popular S&P 500 Stocks by Sector:**\n\n"
     
-    for i, symbol in enumerate(popular_stocks, 1):
-        message += f"{i:2d}. `/stock {symbol}`\n"
+    for sector, stocks in popular_stocks.items():
+        message += f"**{sector}:**\n"
+        for stock in stocks:
+            message += f"• `/stock {stock}`\n"
+        message += "\n"
     
     sp500_count = len(bot.get_sp500_symbols())
-    message += f"\n💡 **Total supported:** {sp500_count} S&P 500 stocks"
+    message += f"💡 **Total supported:** {sp500_count} S&P 500 stocks"
     
     await update.message.reply_text(message)
 
@@ -288,7 +331,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 **Commands:**
 • `/stock [SYMBOL]` - Get real-time stock data
-• `/list` - Show popular stocks
+• `/list` - Show popular stocks by sector
 • `/help` - Show this help
 
 **Data Coverage:**
@@ -305,8 +348,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • Live price updates
 • Change indicators (📈📉)
 • Professional financial metrics
+• Sector-based stock organization
 
-Need support? Contact @maggie"""
+Need support? The bot is built by Maggie"""
     
     await update.message.reply_text(help_message)
 
@@ -316,8 +360,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # 檢查是否包含支援的股票代碼
     sp500_symbols = bot.get_sp500_symbols()
+    popular_symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'WMT', 'KO']
     
-    for symbol in sp500_symbols[:50]:  # 檢查前50個熱門股票
+    for symbol in popular_symbols:
         if symbol in text:
             await update.message.reply_text(
                 f"💡 I detected '{symbol}' in your message!\n"
@@ -343,7 +388,7 @@ def main():
     # 預載標普500清單
     logger.info("Pre-loading S&P 500 symbols...")
     symbols = bot.get_sp500_symbols()
-    logger.info(f"Loaded {len(symbols)} S&P 500 symbols")
+    logger.info(f"Successfully loaded {len(symbols)} S&P 500 symbols")
     
     # 清除可能存在的 webhook 衝突
     logger.info("Clearing any existing webhooks...")
