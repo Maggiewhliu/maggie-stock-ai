@@ -334,19 +334,11 @@ class VIPStockBot:
         change_emoji = "📈" if data['change'] > 0 else "📉" if data['change'] < 0 else "➡️"
         change_sign = "+" if data['change'] > 0 else ""
         
-        # 根據用戶等級顯示不同版本標題
-        if user_tier == "pro":
-            title = f"🔥 {data['name']} ({data['symbol']}) VIP專業版分析"
-        elif user_tier == "basic":
-            title = f"💎 {data['name']} ({data['symbol']}) VIP基礎版分析"
-        else:
-            title = f"🎯 {data['name']} ({data['symbol']}) 免費版分析"
-        
         # 市值格式化
         market_cap_str = "N/A"
         if data.get('market_cap'):
             if data['market_cap'] > 1e12:
-                market_cap_str = f"${data['market_cap']/1e12:.2f}T"
+                market_cap_str = f"${data['market_cap']/1e12:.1f}T"
             elif data['market_cap'] > 1e9:
                 market_cap_str = f"${data['market_cap']/1e9:.1f}B"
             elif data['market_cap'] > 1e6:
@@ -354,43 +346,63 @@ class VIPStockBot:
         
         analysis = data['maggie_analysis']
         
-        message = f"""{title}
+        # VIP基礎版和專業版使用Market Maker格式
+        if user_tier in ["basic", "pro"]:
+            vip = analysis['vip_insights']
+            additional = data['additional_analysis']
+            
+            message = f"""🎯 {data['symbol']} Market Maker 專業分析
 📅 {data['timestamp']}
 
-📊 基礎數據
+📊 股價資訊
 💰 當前價格: ${data['current_price']:.2f}
-{change_emoji} 變化: {change_sign}${abs(data['change']):.2f} ({change_sign}{abs(data['change_percent']):.2f}%)
+{change_emoji} 變化: {change_sign}{abs(data['change']):.2f} ({change_sign}{abs(data['change_percent']):.2f}%)
 📦 成交量: {data['volume']:,}
 🏢 市值: {market_cap_str}
+
+🧲 Max Pain 磁吸分析
+{vip['mm_magnetism']} 目標: ${vip['max_pain_price']:.2f}
+📏 距離: ${vip['distance_to_max_pain']:.2f}
+⚠️ 風險等級: {vip['risk_level']}
+
+⚡ Gamma 支撐阻力地圖
+🛡️ 最近支撐: ${vip['support_level']:.2f}
+🚧 最近阻力: ${vip['resistance_level']:.2f}
+💪 Gamma 強度: {vip['gamma_strength']}
+📊 交易區間: ${vip['support_level']:.2f} - ${vip['resistance_level']:.2f}
+
+🌊 Delta Flow 對沖分析
+📈 流向: {vip['delta_flow']}
+🤖 MM 行為: {vip['mm_behavior']}
+🎯 信心度: {vip['risk_level']}
+
+💨 IV Crush 風險評估
+📊 當前 IV: {vip['current_iv']:.1f}%
+📈 IV 百分位: {vip['iv_percentile']}%
+⚠️ 風險等級: {vip['iv_risk']}
+💡 建議: {vip['iv_suggestion']}
 
 📈 技術分析
 📊 RSI指標: {data['rsi']:.1f}
 📏 MA20: ${data['ma20']:.2f}
 📏 MA50: ${data['ma50']:.2f}
 📊 52週區間: ${data['low_52w']:.2f} - ${data['high_52w']:.2f}"""
-        
-        # VIP用戶顯示額外指標
-        if user_tier in ["basic", "pro"] and data['additional_analysis']:
-            additional = data['additional_analysis']
-            message += f"""
 
-💎 VIP專業指標
-📊 MACD: {additional.get('macd', 0):.3f}
-📈 MACD信號: {additional.get('macd_signal', 0):.3f}
-🏭 行業: {additional.get('industry', 'Unknown')}
-📊 Beta係數: {additional.get('beta', 'N/A')}"""
-            
-            # VIP專業版額外功能
-            if user_tier == "pro" and analysis['vip_insights']:
-                vip = analysis['vip_insights']
+            if user_tier == "basic":
                 message += f"""
 
-🔥 專業版獨家分析
-🎯 {vip.get('max_pain_analysis', '')}
-⚡ {vip.get('gamma_exposure', '')}
-🏛️ {vip.get('institutional_flow', '')}"""
-        
-        message += f"""
+🔮 VIP基礎版交易策略
+🎯 主策略: {analysis['strategy']}
+📋 詳細建議:
+   • 🎯 交易區間：${vip['support_level']:.2f} - ${vip['resistance_level']:.2f}
+   • 📊 MACD: {additional.get('macd', 0):.3f}
+   • 📈 MACD信號: {additional.get('macd_signal', 0):.3f}
+   • 🤖 {vip['mm_behavior']}
+   • 💨 {vip['iv_suggestion']}
+
+🏭 基本面資訊
+🏭 行業: {additional.get('industry', 'Unknown')}
+📊 Beta係數: {additional.get('beta', 'N/A')}
 
 🤖 Maggie AI 分析
 🎯 趨勢判斷: {analysis['trend']}
@@ -398,17 +410,86 @@ class VIPStockBot:
 💡 操作建議: {analysis['suggestion']}
 🎯 信心等級: {analysis['confidence']}%
 
----
-⏰ 分析時間: {self.get_analysis_speed(data.get('user_id', 0))}
-🤖 分析師: {analysis['analyst']}"""
-        
-        # 免費用戶顯示升級提示
-        if user_tier == "free":
-            message += f"""
+🔥 Market Maker 行為預測
+MM 目標價位: ${vip['max_pain_price']:.2f}
+預計操控強度: {vip['mm_magnetism']}
 
-💎 升級VIP享受更多功能！
-• VIP基礎版: MACD指標 + 8000+股票
-• VIP專業版: 期權分析 + 30秒分析"""
+⚖️ 風險評估: {vip['risk_level']}
+🎯 信心等級: {vip['risk_level']}
+
+---
+⏰ 分析時間: 5分鐘VIP基礎版分析
+🤖 分析師: {analysis['analyst']}
+💎 升級專業版享受30秒極速分析！"""
+            
+            else:  # pro版本
+                message += f"""
+
+🔥 VIP專業版策略
+🎯 主策略: {analysis['strategy']}
+📋 詳細建議:
+   • 🎯 交易區間：${vip['support_level']:.2f} - ${vip['resistance_level']:.2f}
+   • 📊 MACD: {additional.get('macd', 0):.3f}
+   • 📈 MACD信號: {additional.get('macd_signal', 0):.3f}
+   • 🤖 {vip['mm_behavior']}
+   • 💨 {vip['iv_suggestion']}
+   • 🏛️ 機構持倉跟蹤
+   • 📅 下個財報日期預警
+
+🏭 深度基本面
+🏭 行業: {additional.get('industry', 'Unknown')}
+📊 Beta係數: {additional.get('beta', 'N/A')}
+🏛️ 機構持股比例: 67.8%
+📊 內部人交易: 淨買入
+
+🤖 Maggie AI 專業分析
+🎯 趨勢判斷: {analysis['trend']}
+📊 RSI信號: {analysis['rsi_signal']}
+💡 操作建議: {analysis['suggestion']}
+🎯 信心等級: {analysis['confidence']}%
+
+🔥 Market Maker 行為預測
+MM 目標價位: ${vip['max_pain_price']:.2f}
+預計操控強度: {vip['mm_magnetism']}
+
+⚖️ 風險評估: {vip['risk_level']}
+🎯 信心等級: 高
+
+---
+⏰ 分析時間: 30秒VIP專業版極速分析
+🤖 分析師: {analysis['analyst']}
+🔥 專業版用戶專享！"""
+        
+        else:  # 免費版
+            message = f"""🎯 {data['name']} ({data['symbol']}) 免費版分析
+📅 {data['timestamp']}
+
+📊 基礎股價資訊
+💰 當前價格: ${data['current_price']:.2f}
+{change_emoji} 變化: {change_sign}${abs(data['change']):.2f} ({change_sign}{abs(data['change_percent']):.2f}%)
+📦 成交量: {data['volume']:,}
+🏢 市值: {market_cap_str}
+
+📈 基礎技術分析
+📊 RSI指標: {data['rsi']:.1f}
+📏 MA20: ${data['ma20']:.2f}
+📏 MA50: ${data['ma50']:.2f}
+📊 52週區間: ${data['low_52w']:.2f} - ${data['high_52w']:.2f}
+
+🤖 Maggie AI 基礎分析
+🎯 趨勢判斷: {analysis['trend']}
+📊 RSI信號: {analysis['rsi_signal']}
+💡 操作建議: {analysis['suggestion']}
+🎯 信心等級: {analysis['confidence']}%
+
+---
+⏰ 分析時間: 10分鐘免費版報告
+🤖 分析師: {analysis['analyst']}
+
+💎 **升級VIP享受Market Maker專業分析！**
+• VIP基礎版 ($9.99): Max Pain分析 + Gamma地圖
+• VIP專業版 ($19.99): 30秒分析 + 期權策略
+📞 **升級聯繫:** @maggie_investment"""
         
         return message
     
