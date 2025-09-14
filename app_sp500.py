@@ -54,7 +54,7 @@ async def enhanced_upgrade_command(update: Update, context: ContextTypes.DEFAULT
 "升級VIP後，我的投資組合回報率提升了23%" - 台北投資人張先生
 "IPO追蹤功能讓我抓住了3支翻倍股" - 美股投資者李小姐
 
-📞 **立即升級聯繫:** @Maggie_VIP_Upgrade_Bot
+📞 **立即升級聯繫:管理員Maggie.L
 🎯 **限時優惠只到月底！**"""
     
     await update.message.reply_text(upgrade_message)
@@ -135,4 +135,4 @@ def get_stock_not_supported_upgrade_prompt(symbol):
 升級VIP，擴大投資視野。
 
 🎯 **立即升級查詢 {symbol}**
-📞 **聯繫:** @Maggie_VIP_Upgrade_Bot"""
+📞 **聯繫:管理員Maggie.L
