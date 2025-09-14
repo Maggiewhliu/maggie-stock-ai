@@ -346,8 +346,8 @@ class VIPStockBot:
         
         analysis = data['maggie_analysis']
         
-        # VIP基礎版和專業版使用Market Maker格式
-        if user_tier in ["basic", "pro"]:
+        # VIP基礎版和VIC專業版使用Market Maker格式
+        if user_tier in ["basic", "vic"]:
             vip = analysis['vip_insights']
             additional = data['additional_analysis']
             
@@ -415,17 +415,28 @@ MM 目標價位: ${vip['max_pain_price']:.2f}
 預計操控強度: {vip['mm_magnetism']}
 
 ⚖️ 風險評估: {vip['risk_level']}
-🎯 信心等級: {vip['risk_level']}
 
 ---
 ⏰ 分析時間: 5分鐘VIP基礎版分析
 🤖 分析師: {analysis['analyst']}
-💎 升級專業版享受30秒極速分析！"""
+
+🔥 **升級VIC專業版享受頂級服務！**
+**VIC專業版特色:**
+✅ **30秒極速分析** (比基礎版快10倍)
+✅ **每週美股總結報告** (下週預測+熱門股)
+✅ **專屬投資策略建議** (AI個人化配置)
+✅ **機構持倉追蹤** (巴菲特等大戶動態)
+✅ **期權深度策略** (Greeks計算+策略)
+
+💎 **限時特價:** ~~$29.99~~ **$19.99/月**
+
+📞 **立即升級請找管理員:** @maggie_investment (Maggie.L)
+⭐ **不滿意30天退款保證**"""
             
-            else:  # pro版本
+            else:  # vic版本
                 message += f"""
 
-🔥 VIP專業版策略
+🔥 VIC專業版獨家策略
 🎯 主策略: {analysis['strategy']}
 📋 詳細建議:
    • 🎯 交易區間：${vip['support_level']:.2f} - ${vip['resistance_level']:.2f}
@@ -436,13 +447,20 @@ MM 目標價位: ${vip['max_pain_price']:.2f}
    • 🏛️ 機構持倉跟蹤
    • 📅 下個財報日期預警
 
-🏭 深度基本面
+🏭 深度基本面 (VIC專享)
 🏭 行業: {additional.get('industry', 'Unknown')}
 📊 Beta係數: {additional.get('beta', 'N/A')}
 🏛️ 機構持股比例: 67.8%
 📊 內部人交易: 淨買入
+📈 下週預測: 看漲 (+3.2%)
 
-🤖 Maggie AI 專業分析
+📅 VIC專屬投資策略
+• 本週熱門股: NVDA, TSLA, AAPL
+• 下週關注: 科技股財報季
+• 專屬配置: 60%成長股 + 40%價值股
+• 風險提醒: 留意Fed政策變化
+
+🤖 Maggie AI VIC專業分析
 🎯 趨勢判斷: {analysis['trend']}
 📊 RSI信號: {analysis['rsi_signal']}
 💡 操作建議: {analysis['suggestion']}
@@ -450,6 +468,55 @@ MM 目標價位: ${vip['max_pain_price']:.2f}
 
 🔥 Market Maker 行為預測
 MM 目標價位: ${vip['max_pain_price']:.2f}
+預計操控強度: {vip['mm_magnetism']}
+
+⚖️ 風險評估: {vip['risk_level']}
+🎯 信心等級: 高
+
+---
+⏰ 分析時間: 30秒VIC專業版極速分析
+🤖 分析師: {analysis['analyst']}
+🔥 VIC專業版用戶專享！感謝您的支持！"""
+        
+        else:  # 免費版
+            message = f"""🎯 {data['name']} ({data['symbol']}) 免費版分析
+📅 {data['timestamp']}
+
+📊 基礎股價資訊
+💰 當前價格: ${data['current_price']:.2f}
+{change_emoji} 變化: {change_sign}${abs(data['change']):.2f} ({change_sign}{abs(data['change_percent']):.2f}%)
+📦 成交量: {data['volume']:,}
+🏢 市值: {market_cap_str}
+
+📈 基礎技術分析
+📊 RSI指標: {data['rsi']:.1f}
+📏 MA20: ${data['ma20']:.2f}
+📏 MA50: ${data['ma50']:.2f}
+📊 52週區間: ${data['low_52w']:.2f} - ${data['high_52w']:.2f}
+
+🤖 Maggie AI 基礎分析
+🎯 趨勢判斷: {analysis['trend']}
+📊 RSI信號: {analysis['rsi_signal']}
+💡 操作建議: {analysis['suggestion']}
+🎯 信心等級: {analysis['confidence']}%
+
+---
+⏰ 分析時間: 10分鐘免費版報告
+🤖 分析師: {analysis['analyst']}
+
+💎 **升級VIP享受Market Maker專業分析！**
+**VIP基礎版特色:**
+✅ **24/7全天候查詢** (不受時間限制)
+✅ **全美股8000+支** (vs 免費版500支)
+✅ **無限次數查詢** (vs 免費版每日3次)
+✅ **5分鐘分析** (vs 免費版10分鐘)
+
+🎁 **限時特價:** ~~$19.99~~ **$9.99/月**
+
+📞 **立即升級請找管理員:** @maggie_investment (Maggie.L)
+⭐ **不滿意30天退款保證**"""
+        
+        return message2f}
 預計操控強度: {vip['mm_magnetism']}
 
 ⚖️ 風險評估: {vip['risk_level']}
@@ -1207,8 +1274,8 @@ async def admin_add_vip_command(update: Update, context: ContextTypes.DEFAULT_TY
         target_user_id = int(context.args[0])
         tier = context.args[1].lower()
         
-        if tier not in ["basic", "pro"]:
-            await update.message.reply_text("❌ 等級必須是 basic 或 pro")
+        if tier not in ["basic", "vic", "pro"]:
+            await update.message.reply_text("❌ 等級必須是 basic 或 vic")
             return
         
         bot.add_vip_user(target_user_id, tier)
