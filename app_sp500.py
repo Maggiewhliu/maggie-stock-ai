@@ -308,7 +308,8 @@ class VIPStockBot:
                 'delta_flow': '🟢 多頭流向' if change_pct > 0 else '🔴 空頭流向',
                 'mm_behavior': 'MM 推升價格' if change_pct > 0 else 'MM 壓制價格',
                 'iv_risk': random.choice(['🟢 低風險', '🟡 中等風險', '🔴 高風險']),
-                'risk_level': random.choice(['低風險', '中等風險', '高風險'])
+                'risk_level': random.choice(['低風險', '中等風險', '高風險']),
+                'strategy': random.choice(['突破買入', '逢低買入', '區間操作', '觀望等待'])
             }
         
         # 綜合建議
@@ -386,12 +387,12 @@ class VIPStockBot:
 ✅ **無限次數查詢** (vs 免費版每日3次)
 ✅ **5分鐘分析** (vs 免費版10分鐘)
 
-🎁 **限時特價:** ~~$19.99~~ **$9.99/月**
+🎁 **限時優惠半價:** 美金原價~~$19.99~~ **$9.99/月** | 台幣原價~~$600~~ **$300/月**
 
-📞 **立即升級請找管理員:** @maggie_investment (Maggie.L)"""
+📞 **立即升級請找管理員:** @maggie_investment (Maggie.L)
+⭐ **不滿意30天退款保證**"""
             
-        else:
-            # VIP版本
+        else:  # VIP版本
             vip = analysis['vip_insights']
             additional = data['additional_analysis']
             
@@ -425,6 +426,17 @@ class VIPStockBot:
 📏 MA50: ${data['ma50']:.2f}
 📊 52週區間: ${data['low_52w']:.2f} - ${data['high_52w']:.2f}
 
+🔮 VIP交易策略
+🎯 主策略: {vip['strategy']}
+📋 詳細建議:
+   • 🎯 交易區間：${vip['support_level']:.2f} - ${vip['resistance_level']:.2f}
+   • 📊 MACD: {additional.get('macd', 0):.3f}
+   • 📈 MACD信號: {additional.get('macd_signal', 0):.3f}
+
+🏭 基本面資訊
+🏭 行業: {additional.get('industry', 'Unknown')}
+📊 Beta係數: {additional.get('beta', 'N/A')}
+
 🤖 Maggie AI 分析
 🎯 趨勢判斷: {analysis['trend']}
 📊 RSI信號: {analysis['rsi_signal']}
@@ -445,6 +457,7 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """股票查詢命令"""
     try:
         user_id = update.effective_user.id
+        logger.info(f"User {user_id} called stock command")
         
         if not context.args:
             await update.message.reply_text(
@@ -455,31 +468,13 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         symbol = context.args[0].upper().strip()
-        logger.info(f"User {user_id} querying {symbol}")
-        
-        # 檢查用戶查詢限制
-        can_query, current_count = bot.check_user_query_limit(user_id)
-        if not can_query:
-            await update.message.reply_text("⏰ 每日查詢限制已達上限 (3/3)")
-            return
-        
-        # 檢查查詢權限（時間窗口）
-        allowed, reason = bot.is_query_allowed(user_id)
-        if not allowed:
-            if reason == "weekend":
-                await update.message.reply_text("📅 週末市場關閉")
-            else:
-                await update.message.reply_text("🔒 查詢窗口已關閉")
-            return
+        logger.info(f"Analyzing symbol: {symbol}")
         
         # 檢查股票是否支援
         supported_symbols = bot.get_stock_coverage(user_id)
         if symbol not in supported_symbols:
             await update.message.reply_text(f"❌ '{symbol}' 不在支援清單中")
             return
-        
-        # 增加查詢次數
-        bot.increment_user_query(user_id)
         
         # 發送分析中訊息
         analysis_speed = bot.get_analysis_speed(user_id)
@@ -502,6 +497,8 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """開始命令"""
+    logger.info(f"User {update.effective_user.id} started bot")
+    
     welcome_message = """🤖 歡迎使用 Maggie Stock AI!
 
 📊 免費版功能
@@ -546,8 +543,8 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     
     # 啟動機器人
-    logger.info("Bot starting...")
-    application.run_polling()
+    logger.info("Bot starting with polling...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
