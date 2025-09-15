@@ -910,6 +910,7 @@ def main():
         application.add_handler(CommandHandler("admin_add_vip", admin_add_vip_command))
         application.add_handler(CommandHandler("admin_remove_vip", admin_remove_vip_command))
         application.add_handler(CommandHandler("admin_status", admin_status_command))
+        application.add_handler(CommandHandler("admin_debug", admin_debug_command))
         
         # 一般訊息處理
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
