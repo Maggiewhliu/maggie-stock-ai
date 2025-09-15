@@ -1315,11 +1315,45 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(help_message)
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """處理一般文本消息"""
+    try:
+        message_text = update.message.text.strip()
+        user_id = update.effective_user.id
+        
+        # 檢查是否為股票代碼查詢（3-5個字母）
+        if len(message_text) >= 3 and len(message_text) <= 5 and message_text.isalpha():
+            # 將消息轉為股票查詢
+            context.args = [message_text.upper()]
+            await stock_command(update, context)
+            return
+        
+        # 其他消息給予提示
+        help_text = """👋 歡迎使用 Maggie Stock AI！
+
+📝 **快速查詢方式:**
+• 直接輸入股票代碼: `AAPL`, `TSLA`, `NVDA`
+• 或使用命令: `/stock AAPL`
+
+💡 **常用命令:**
+• `/start` - 開始使用
+• `/mag7` - 七巨頭報告
+• `/help` - 詳細說明
+• `/upgrade` - VIP升級
+
+💎 有問題請使用 /help 查看完整功能！"""
+        
+        await update.message.reply_text(help_text)
+        
+    except Exception as e:
+        logger.error(f"Error handling message: {e}")
+        await update.message.reply_text("系統錯誤，請稍後再試")
+
 # 管理員命令（手動添加VIP用戶）
 async def admin_add_vip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """管理員添加VIP用戶命令"""
-    # 這裡應該檢查管理員權限
-    admin_ids = [123456789]  # 替換為實際的管理員ID
+    # 這裡應該檢查管理員權限 - 請替換為實際的管理員ID
+    admin_ids = [123456789, 987654321]  # 替換為實際的管理員ID
     
     if update.effective_user.id not in admin_ids:
         await update.message.reply_text("❌ 權限不足")
@@ -1353,9 +1387,39 @@ async def admin_add_vip_command(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         await update.message.reply_text(f"❌ 添加失敗: {e}")
 
+async def admin_remove_vip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """管理員移除VIP用戶命令"""
+    admin_ids = [123456789, 987654321]  # 替換為實際的管理員ID
+    
+    if update.effective_user.id not in admin_ids:
+        await update.message.reply_text("❌ 權限不足")
+        return
+    
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "**用法:** /admin_remove_vip [用戶ID]\n"
+            "**例如:** /admin_remove_vip 123456789"
+        )
+        return
+    
+    try:
+        target_user_id = int(context.args[0])
+        bot.remove_vip_user(target_user_id)
+        
+        await update.message.reply_text(
+            f"✅ **VIP用戶移除成功**\n"
+            f"👤 **用戶ID:** {target_user_id}"
+        )
+        
+    except ValueError:
+        await update.message.reply_text("❌ 用戶ID必須是數字")
+    except Exception as e:
+        await update.message.reply_text(f"❌ 移除失敗: {e}")
+
 def main():
     """主函數"""
     logger.info("Starting Maggie Stock AI VIP-Enabled Bot...")
+    logger.info(f"Bot Token: {BOT_TOKEN[:10]}...")  # 只顯示前10個字符
     
     # 初始化股票清單
     free_symbols = bot.get_sp500_and_ipo_symbols()
@@ -1366,12 +1430,16 @@ def main():
     bot.reset_daily_queries()
     
     # 清除webhook
-    clear_webhook()
+    try:
+        clear_webhook()
+        logger.info("Webhook cleared successfully")
+    except Exception as e:
+        logger.warning(f"Failed to clear webhook: {e}")
     
     # 建立應用
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # 註冊命令
+    # 註冊命令處理器
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("stock", stock_command))
     application.add_handler(CommandHandler("mag7", mag7_command))
@@ -1381,55 +1449,67 @@ def main():
     
     # 管理員命令
     application.add_handler(CommandHandler("admin_add_vip", admin_add_vip_command))
+    application.add_handler(CommandHandler("admin_remove_vip", admin_remove_vip_command))
+    
+    # 添加一般消息處理器（處理股票代碼直接輸入）
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # 註冊定時任務
     job_queue = application.job_queue
     if job_queue:
-        taipei_tz = pytz.timezone('Asia/Taipei')
-        # 每日4次七巨頭報告
-        job_queue.run_daily(lambda context: asyncio.create_task(send_mag7_report(context)), 
-                           time(8, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
-        job_queue.run_daily(lambda context: asyncio.create_task(send_mag7_report(context)), 
-                           time(12, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
-        job_queue.run_daily(lambda context: asyncio.create_task(send_mag7_report(context)), 
-                           time(16, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
-        job_queue.run_daily(lambda context: asyncio.create_task(send_mag7_report(context)), 
-                           time(20, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
-        
-        # 每日重置查詢次數
-        job_queue.run_daily(lambda context: bot.reset_daily_queries(), time(0, 0), timezone=taipei_tz)
+        try:
+            taipei_tz = pytz.timezone('Asia/Taipei')
+            # 每日4次七巨頭報告
+            job_queue.run_daily(send_mag7_report, 
+                               time(8, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
+            job_queue.run_daily(send_mag7_report, 
+                               time(12, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
+            job_queue.run_daily(send_mag7_report, 
+                               time(16, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
+            job_queue.run_daily(send_mag7_report, 
+                               time(20, 0), days=(0, 1, 2, 3, 4, 5, 6), timezone=taipei_tz)
+            
+            # 每日重置查詢次數
+            job_queue.run_daily(lambda context: bot.reset_daily_queries(), time(0, 0), timezone=taipei_tz)
+            logger.info("Job queue setup completed")
+        except Exception as e:
+            logger.warning(f"Failed to setup job queue: {e}")
     
     # 啟動機器人
-    if os.getenv('RENDER'):
-        logger.info(f"Running in Render mode on port {PORT}")
-        try:
+    try:
+        if os.getenv('RENDER'):
+            logger.info(f"Running in Render mode on port {PORT}")
+            render_url = os.getenv('RENDER_EXTERNAL_URL', "https://maggie-stock-ai.onrender.com")
+            
             if set_webhook():
                 logger.info("Starting VIP-enabled webhook server...")
                 application.run_webhook(
                     listen="0.0.0.0",
                     port=PORT,
-                    webhook_url=f"{os.getenv('RENDER_EXTERNAL_URL', 'https://maggie-stock-ai.onrender.com')}/{BOT_TOKEN}",
+                    webhook_url=f"{render_url}/{BOT_TOKEN}",
                     url_path=BOT_TOKEN
                 )
             else:
                 logger.warning("Webhook failed, using polling...")
-                application.run_polling()
-        except Exception as e:
-            logger.error(f"Webhook failed: {e}, using polling...")
-            application.run_polling()
-    else:
-        logger.info("Running in local development mode")
-        application.run_polling()
+                application.run_polling(allowed_updates=Update.ALL_TYPES)
+        else:
+            logger.info("Running in local development mode")
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+            
+    except Exception as e:
+        logger.error(f"Failed to start bot: {e}")
+        raise
 
 # 自動報告任務
 async def send_mag7_report(context: ContextTypes.DEFAULT_TYPE):
     """發送七巨頭自動報告到所有用戶"""
     try:
         report = await bot.generate_mag7_report()
+        logger.info("MAG7 report generated successfully")
         
         # 實際應用中，這裡應該從數據庫獲取所有訂閱用戶
         # 目前簡化為記錄日誌
-        logger.info("MAG7 report generated and ready to send to subscribers")
+        logger.info("MAG7 report ready to send to subscribers")
         
         # 如果有用戶清單，可以這樣發送：
         # all_users = get_all_subscribed_users()  # 從數據庫獲取
@@ -1444,4 +1524,10 @@ async def send_mag7_report(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Failed to generate MAG7 report: {e}")
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}")
+        raise
