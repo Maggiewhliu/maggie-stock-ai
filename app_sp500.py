@@ -505,12 +505,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • 股票覆蓋: 500+支股票 (S&P 500 + 熱門IPO)
 • 查詢限制: 每日3次
 • 分析深度: 10分鐘專業報告
+• 數據類型: 最新收盤數據 + 技術分析
+
+🎁 免費版福利
+• 七巨頭報告: 每6小時自動發送 (每日4次)
+• 發送時間: 08:00, 12:00, 16:00, 20:00 (台北時間)
 
 💡 快速開始
 • /stock AAPL - 分析蘋果公司
 • /stock TSLA - 分析特斯拉
 
-💎 升級VIP享受更多功能！"""
+💎 升級VIC享受24/7查詢！
+• VIC基礎版: 3小時內數據 + 8000+股票 + 即時新聞
+• VIC專業版: 30秒分析 + ETF深度分析"""
     
     await update.message.reply_text(welcome_message)
 
