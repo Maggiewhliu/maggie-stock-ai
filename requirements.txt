@@ -1,6 +1,8 @@
+yfinance
 python-telegram-bot==13.15
-flask==2.3.3
-yfinance==0.2.18
+pytz
+requests
+flask
 aiohttp==3.9.1
 pytz==2023.3
 asyncio
