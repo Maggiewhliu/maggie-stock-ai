@@ -5,8 +5,7 @@ import yfinance as yf
 from datetime import datetime, timedelta, time
 import pytz
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, JobQueue
-import asyncio
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import json
 import random
 
@@ -798,20 +797,22 @@ def main():
         logger.info("All command handlers registered successfully")
         
         # 初始化股票清單
-        free_stocks = bot.get_sp500_and_ipo_symbols()
-        vip_stocks = bot.get_full_stock_symbols()
-        logger.info(f"Free stocks loaded: {len(free_stocks)} (TSLA included: {'TSLA' in free_stocks})")
-        logger.info(f"VIP stocks loaded: {len(vip_stocks)} (TSLA included: {'TSLA' in vip_stocks})")
+        try:
+            free_stocks = bot.get_sp500_and_ipo_symbols()
+            vip_stocks = bot.get_full_stock_symbols()
+            logger.info(f"Free stocks loaded: {len(free_stocks)} (TSLA included: {'TSLA' in free_stocks})")
+            logger.info(f"VIP stocks loaded: {len(vip_stocks)} (TSLA included: {'TSLA' in vip_stocks})")
+            logger.info(f"MAG7 stocks: {bot.mag7}")
+        except Exception as e:
+            logger.error(f"Error loading stock symbols: {e}")
         
-        # 啟動機器人
+        # 啟動機器人 - 簡化版本
         logger.info("Bot starting with polling...")
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
+        application.run_polling(drop_pending_updates=True)
         
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
+        raise
 
 if __name__ == '__main__':
     main()
